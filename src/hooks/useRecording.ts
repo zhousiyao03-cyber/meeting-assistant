@@ -10,12 +10,21 @@ export function useRecording() {
 
   const start = useCallback(
     async (micDevice: string, captureDevice: string) => {
-      await startRecording(micDevice, captureDevice);
       setStatus("recording");
       setElapsed(0);
       timerRef.current = setInterval(() => {
         setElapsed((prev) => prev + 1);
       }, 1000);
+      try {
+        await startRecording(micDevice, captureDevice);
+      } catch (e) {
+        console.error("Failed to start recording:", e);
+        setStatus("idle");
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+      }
     },
     [],
   );

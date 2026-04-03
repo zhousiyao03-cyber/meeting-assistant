@@ -45,7 +45,7 @@ export const deleteTemplate = (id: string) =>
 export const getConfig = () => invoke<AppConfig>("get_config");
 
 export const saveConfig = (config: AppConfig) =>
-  invoke<void>("save_config", { config });
+  invoke<void>("save_app_config", { config });
 
 export const loadDocument = (path: string) =>
   invoke<LoadedDocument>("load_document", { path });

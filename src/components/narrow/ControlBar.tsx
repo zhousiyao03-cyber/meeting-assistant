@@ -4,6 +4,7 @@ interface ControlBarProps {
   templateName: string;
   formattedTime: string;
   status: RecordingStatus;
+  onStart: () => void;
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
@@ -15,6 +16,7 @@ export function ControlBar({
   templateName,
   formattedTime,
   status,
+  onStart,
   onPause,
   onResume,
   onStop,
@@ -47,30 +49,49 @@ export function ControlBar({
         >
           ⚙
         </button>
-        {status === "recording" ? (
+        {status === "idle" ? (
           <button
-            onClick={onPause}
-            className="p-1.5 rounded hover:bg-[var(--bg-card)] text-sm"
-            title="暂停"
+            onClick={onStart}
+            className="p-1.5 rounded hover:bg-[var(--bg-card)] text-sm text-[var(--accent-green)]"
+            title="开始录制"
           >
-            ⏸
+            ●
           </button>
-        ) : status === "paused" ? (
-          <button
-            onClick={onResume}
-            className="p-1.5 rounded hover:bg-[var(--bg-card)] text-sm"
-            title="继续"
-          >
-            ▶
-          </button>
-        ) : null}
-        <button
-          onClick={onStop}
-          className="p-1.5 rounded hover:bg-[var(--bg-card)] text-sm text-[var(--accent-red)]"
-          title="停止"
-        >
-          ■
-        </button>
+        ) : status === "recording" ? (
+          <>
+            <button
+              onClick={onPause}
+              className="p-1.5 rounded hover:bg-[var(--bg-card)] text-sm"
+              title="暂停"
+            >
+              ⏸
+            </button>
+            <button
+              onClick={onStop}
+              className="p-1.5 rounded hover:bg-[var(--bg-card)] text-sm text-[var(--accent-red)]"
+              title="停止"
+            >
+              ■
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={onResume}
+              className="p-1.5 rounded hover:bg-[var(--bg-card)] text-sm"
+              title="继续"
+            >
+              ▶
+            </button>
+            <button
+              onClick={onStop}
+              className="p-1.5 rounded hover:bg-[var(--bg-card)] text-sm text-[var(--accent-red)]"
+              title="停止"
+            >
+              ■
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

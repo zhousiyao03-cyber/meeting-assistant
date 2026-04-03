@@ -4,8 +4,8 @@ use std::io::Write;
 use std::path::PathBuf;
 
 const MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
-const MODEL_FILENAME: &str = "ggml-small.bin";
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin";
+const MODEL_FILENAME: &str = "ggml-medium.bin";
 
 /// Returns the path to the models directory (~/.meeting-assistant/models/).
 pub fn models_dir() -> Result<PathBuf> {
