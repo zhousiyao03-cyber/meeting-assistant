@@ -10,7 +10,7 @@ use crate::storage::config::{self, AppConfig};
 use crate::storage::history::{self, MeetingRecord};
 use crate::transcript::store::{create_shared_store, SharedTranscriptStore, TranscriptSegment};
 use crate::whisper::downloader;
-use crate::whisper::engine::WhisperEngine;
+use crate::whisper::engine::SherpaEngine;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
@@ -112,6 +112,21 @@ pub async fn start_recording(
         return Err("Already recording".into());
     }
 
+    // Reset state from previous recording
+    {
+        let mut mic_buf = rec.mic_buffer.lock().unwrap();
+        mic_buf.drain_all();
+    }
+    {
+        let mut cap_buf = rec.capture_buffer.lock().unwrap();
+        cap_buf.drain_all();
+    }
+    {
+        let mut store = rec.transcript.lock().unwrap();
+        store.clear();
+    }
+    rec.reference_docs.clear();
+
     rec.is_recording = true;
     rec.is_paused = false;
     rec.start_time = Some(std::time::Instant::now());
@@ -148,89 +163,97 @@ pub async fn start_recording(
         eprintln!("[audio] Streams dropped, capture stopped");
     });
 
-    // Spawn Whisper processing
+    // Spawn sherpa-onnx ASR processing (SenseVoice + Silero VAD)
     let start_time = rec.start_time.unwrap();
     let win = window.clone();
     let transcript_for_whisper = transcript.clone();
     tokio::spawn(async move {
-        let model_path = match crate::whisper::downloader::model_path() {
+        let model_dir = match crate::whisper::downloader::model_path() {
             Ok(Some(p)) => p,
             _ => {
-                eprintln!("[whisper] Model not found");
+                eprintln!("[sherpa] Model not found");
                 return;
             }
         };
-        let engine = match WhisperEngine::new(&model_path) {
+        let engine = match SherpaEngine::new(&model_dir) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("[whisper] Failed to load: {}", e);
+                eprintln!("[sherpa] Failed to load: {}", e);
                 return;
             }
         };
-        eprintln!("[whisper] Model loaded, starting transcription loop");
-
-        let mut last_text = String::new();
+        eprintln!("[sherpa] Engine loaded, starting transcription loop");
 
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
             // Check if paused or stopped
+            let is_recording;
+            let is_paused;
             {
                 let rec = state_for_whisper.lock().await;
-                if !rec.is_recording { break; }
-                if rec.is_paused { continue; }
+                is_recording = rec.is_recording;
+                is_paused = rec.is_paused;
             }
 
-            // Drain BOTH buffers every tick
-            let mic_chunk = {
-                let mut buf = mic_buffer.lock().unwrap();
-                buf.drain_chunk()
-            };
-            let capture_chunk = {
-                let mut buf = capture_buffer.lock().unwrap();
-                buf.drain_chunk()
-            };
-
-            // Mix mic + capture into a single stream
-            let audio_data = match (mic_chunk, capture_chunk) {
-                (Some(mic), Some(cap)) => {
-                    let len = mic.len().min(cap.len());
-                    Some(mic[..len].iter().zip(&cap[..len])
-                        .map(|(m, c)| (m + c) * 0.5)
-                        .collect::<Vec<f32>>())
-                }
-                (Some(mic), None) => Some(mic),
-                (None, Some(cap)) => Some(cap),
-                (None, None) => None,
-            };
-
-            if let Some(audio_data) = audio_data {
-                if WhisperEngine::is_silence(&audio_data) { continue; }
-
-                let offset = start_time.elapsed().as_secs_f64();
-                match engine.transcribe(&audio_data, &last_text) {
-                    Ok(text) if !text.is_empty() => {
-                        // Deduplicate
-                        if text == last_text || last_text.contains(&text) || text.contains(&last_text) {
-                            if text.len() <= last_text.len() { continue; }
-                        }
-                        last_text = text.clone();
-                        eprintln!("[whisper] {}", &text);
-
-                        {
-                            let mut store = transcript_for_whisper.lock().unwrap();
-                            store.add(text.clone(), offset);
-                        }
-                        let segment = TranscriptSegment {
-                            timestamp: chrono::Utc::now(),
-                            text,
-                            offset_secs: offset,
-                        };
-                        let _ = win.emit("new-transcript", &segment);
+            if !is_recording {
+                // Flush remaining audio on stop
+                let remaining = engine.flush();
+                for text in remaining {
+                    let offset = start_time.elapsed().as_secs_f64();
+                    {
+                        let mut store = transcript_for_whisper.lock().unwrap();
+                        store.add(text.clone(), offset);
                     }
-                    Err(e) => eprintln!("[whisper] Error: {}", e),
-                    _ => {}
+                    let segment = TranscriptSegment {
+                        timestamp: chrono::Utc::now(),
+                        text,
+                        offset_secs: offset,
+                    };
+                    let _ = win.emit("new-transcript", &segment);
                 }
+                break;
+            }
+
+            if is_paused { continue; }
+
+            // Drain all available audio from both buffers
+            let mic_samples = {
+                let mut buf = mic_buffer.lock().unwrap();
+                buf.drain_all()
+            };
+            let capture_samples = {
+                let mut buf = capture_buffer.lock().unwrap();
+                buf.drain_all()
+            };
+
+            // Mix mic + capture
+            let audio_data = match (mic_samples.is_empty(), capture_samples.is_empty()) {
+                (false, false) => {
+                    let len = mic_samples.len().min(capture_samples.len());
+                    mic_samples[..len].iter().zip(&capture_samples[..len])
+                        .map(|(m, c)| (m + c) * 0.5)
+                        .collect::<Vec<f32>>()
+                }
+                (false, true) => mic_samples,
+                (true, false) => capture_samples,
+                (true, true) => continue,
+            };
+
+            // Feed to VAD + recognize
+            let texts = engine.process_audio(&audio_data);
+            let offset = start_time.elapsed().as_secs_f64();
+            for text in texts {
+                {
+                    let mut store = transcript_for_whisper.lock().unwrap();
+                    store.add(text.clone(), offset);
+                }
+                let segment = TranscriptSegment {
+                    timestamp: chrono::Utc::now(),
+                    text,
+                    offset_secs: offset,
+                };
+                let _ = win.emit("new-transcript", &segment);
             }
         }
     });
@@ -252,6 +275,13 @@ pub async fn start_recording(
 
         let mut summary_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
         let mut advice_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+
+        // Cooldown: track last advice time and last trigger reason to avoid repetition
+        let mut last_advice_time = std::time::Instant::now() - std::time::Duration::from_secs(60);
+        let mut last_trigger_reason = String::new();
+        let mut last_advice_transcript_len: usize = 0;
+        const ADVICE_COOLDOWN_SECS: u64 = 30;
+        const MIN_NEW_CHARS: usize = 50;
 
         loop {
             // Check if stopped or paused
@@ -290,6 +320,11 @@ pub async fn start_recording(
                     }
                 }
                 _ = advice_interval.tick() => {
+                    // Cooldown check: skip if too soon since last advice
+                    if last_advice_time.elapsed().as_secs() < ADVICE_COOLDOWN_SECS {
+                        continue;
+                    }
+
                     // Pick template: use active_template_id if set, otherwise first
                     let tmpl = {
                         let rec = state_for_advisor.lock().await;
@@ -303,21 +338,37 @@ pub async fn start_recording(
                             let store = transcript_for_advisor.lock().unwrap();
                             store.recent_text(30.0)
                         };
-                        if !recent.is_empty() {
-                            if let Some(trigger) = crate::advisor::rules::evaluate_triggers(
-                                &recent, &tmpl.trigger_hints, 10.0
-                            ) {
-                                eprintln!("[advisor] Trigger fired: {}", trigger.reason);
-                                let offset = start_time.elapsed().as_secs_f64();
-                                match advisor.generate_advice(
-                                    tmpl, &recent, &trigger.reason, &ref_docs, offset
-                                ).await {
-                                    Ok(advice) => {
-                                        eprintln!("[advisor] Advice generated");
-                                        let _ = win_for_advisor.emit("speaking-advice", &advice);
-                                    }
-                                    Err(e) => eprintln!("[advisor] Advice error: {}", e),
+                        if recent.is_empty() { continue; }
+
+                        // Skip if not enough new content since last advice
+                        if recent.len().saturating_sub(last_advice_transcript_len) < MIN_NEW_CHARS
+                            && last_advice_transcript_len > 0 {
+                            continue;
+                        }
+
+                        if let Some(trigger) = crate::advisor::rules::evaluate_triggers(
+                            &recent, &tmpl.trigger_hints, 10.0
+                        ) {
+                            // Skip if same trigger reason fired consecutively
+                            if trigger.reason == last_trigger_reason
+                                && last_advice_time.elapsed().as_secs() < ADVICE_COOLDOWN_SECS * 2 {
+                                eprintln!("[advisor] Skipping duplicate trigger: {}", trigger.reason);
+                                continue;
+                            }
+
+                            eprintln!("[advisor] Trigger fired: {}", trigger.reason);
+                            let offset = start_time.elapsed().as_secs_f64();
+                            match advisor.generate_advice(
+                                tmpl, &recent, &trigger.reason, &ref_docs, offset
+                            ).await {
+                                Ok(advice) => {
+                                    eprintln!("[advisor] Advice: {}", advice.suggestion);
+                                    last_advice_time = std::time::Instant::now();
+                                    last_trigger_reason = trigger.reason.clone();
+                                    last_advice_transcript_len = recent.len();
+                                    let _ = win_for_advisor.emit("speaking-advice", &advice);
                                 }
+                                Err(e) => eprintln!("[advisor] Advice error: {}", e),
                             }
                         }
                     }
