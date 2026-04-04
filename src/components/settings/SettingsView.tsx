@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { AppConfig } from "../../lib/types";
 import { getConfig, saveConfig as saveConfigApi } from "../../lib/tauri";
 import { AudioSettings } from "./AudioSettings";
@@ -19,10 +19,25 @@ export function SettingsView({ onBack }: SettingsViewProps) {
     getConfig().then(setConfig).catch(console.error);
   }, []);
 
-  const handleConfigChange = async (newConfig: AppConfig) => {
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleConfigChange = useCallback((newConfig: AppConfig) => {
     setConfig(newConfig);
-    await saveConfigApi(newConfig);
-  };
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      saveConfigApi(newConfig).catch(console.error);
+    }, 500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const tabs: { id: SettingsTab; label: string; icon: string }[] = [
     { id: "audio", label: "Audio Settings", icon: "🎙" },
