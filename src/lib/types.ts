@@ -21,6 +21,15 @@ export interface SpeakingAdvice {
   timestamp: number;
 }
 
+export interface TriggerConfig {
+  on_ask_opinion: boolean;
+  on_domain_topic: boolean;
+  on_decision_point: boolean;
+  on_discussion_stuck: boolean;
+  custom_keywords: string[];
+  domain_keywords: string[];
+}
+
 export interface MeetingTemplate {
   id: string;
   name: string;
@@ -29,6 +38,10 @@ export interface MeetingTemplate {
   trigger_hints: string[];
   advice_style: string;
   enabled: boolean;
+  role_persona: string;
+  mimic_style: string;
+  expertise_context: string;
+  trigger_config: TriggerConfig;
 }
 
 export interface LlmConfig {
