@@ -31,6 +31,17 @@ impl AudioBuffer {
         }
     }
 
+    /// Drain all available samples without waiting for a full chunk.
+    pub fn drain_all(&mut self) -> Vec<f32> {
+        self.data.drain(..).collect()
+    }
+
+    /// Drain up to `n` samples. Returns whatever is available up to that limit.
+    pub fn drain_up_to(&mut self, n: usize) -> Vec<f32> {
+        let take = n.min(self.data.len());
+        self.data.drain(..take).collect()
+    }
+
     /// How many samples are buffered.
     pub fn len(&self) -> usize {
         self.data.len()

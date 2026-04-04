@@ -11,6 +11,7 @@ import type {
   LoadedDocument,
   ModelDownloadProgress,
   MeetingRecord,
+  BackendError,
 } from "./types";
 
 // Commands
@@ -95,3 +96,8 @@ export const onModelDownloadProgress = (
   listen<ModelDownloadProgress>("model-download-progress", (e) =>
     handler(e.payload),
   );
+
+export const onBackendError = (
+  handler: (error: BackendError) => void,
+): Promise<UnlistenFn> =>
+  listen<BackendError>("backend-error", (e) => handler(e.payload));

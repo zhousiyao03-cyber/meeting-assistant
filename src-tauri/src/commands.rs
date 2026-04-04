@@ -142,14 +142,29 @@ pub async fn start_recording(
     let mic_buf_for_thread = mic_buffer.clone();
     let cap_buf_for_thread = capture_buffer.clone();
     let state_for_streams: SharedRecordingState = Arc::clone(&state);
+    let win_for_error = window.clone();
     std::thread::spawn(move || {
         let mic_stream = match capture::start_capture(&mic_device, mic_buf_for_thread) {
             Ok(s) => s,
-            Err(e) => { eprintln!("[audio] Mic capture failed: {}", e); return; }
+            Err(e) => {
+                eprintln!("[audio] Mic capture failed: {}", e);
+                let _ = win_for_error.emit("backend-error", serde_json::json!({
+                    "source": "audio",
+                    "message": format!("麦克风启动失败: {}", e)
+                }));
+                return;
+            }
         };
         let capture_stream = match capture::start_capture(&capture_device, cap_buf_for_thread) {
             Ok(s) => s,
-            Err(e) => { eprintln!("[audio] System capture failed: {}", e); return; }
+            Err(e) => {
+                eprintln!("[audio] System capture failed: {}", e);
+                let _ = win_for_error.emit("backend-error", serde_json::json!({
+                    "source": "audio",
+                    "message": format!("系统音频捕获失败: {}", e)
+                }));
+                return;
+            }
         };
         eprintln!("[audio] Streams started, holding alive...");
         loop {
@@ -172,6 +187,10 @@ pub async fn start_recording(
             Ok(Some(p)) => p,
             _ => {
                 eprintln!("[sherpa] Model not found");
+                let _ = win.emit("backend-error", serde_json::json!({
+                    "source": "asr",
+                    "message": "语音模型未下载，请先在设置中下载模型"
+                }));
                 return;
             }
         };
@@ -179,6 +198,10 @@ pub async fn start_recording(
             Ok(e) => e,
             Err(e) => {
                 eprintln!("[sherpa] Failed to load: {}", e);
+                let _ = win.emit("backend-error", serde_json::json!({
+                    "source": "asr",
+                    "message": format!("语音模型加载失败: {}", e)
+                }));
                 return;
             }
         };
@@ -217,27 +240,37 @@ pub async fn start_recording(
 
             if is_paused { continue; }
 
-            // Drain all available audio from both buffers
-            let mic_samples = {
-                let mut buf = mic_buffer.lock().unwrap();
-                buf.drain_all()
+            // Drain available audio, matching lengths to avoid data loss
+            let mic_len = {
+                let buf = mic_buffer.lock().unwrap();
+                buf.len()
             };
-            let capture_samples = {
-                let mut buf = capture_buffer.lock().unwrap();
-                buf.drain_all()
+            let cap_len = {
+                let buf = capture_buffer.lock().unwrap();
+                buf.len()
             };
 
-            // Mix mic + capture
-            let audio_data = match (mic_samples.is_empty(), capture_samples.is_empty()) {
-                (false, false) => {
-                    let len = mic_samples.len().min(capture_samples.len());
-                    mic_samples[..len].iter().zip(&capture_samples[..len])
-                        .map(|(m, c)| (m + c) * 0.5)
-                        .collect::<Vec<f32>>()
-                }
-                (false, true) => mic_samples,
-                (true, false) => capture_samples,
-                (true, true) => continue,
+            if mic_len == 0 && cap_len == 0 { continue; }
+
+            let audio_data = if mic_len > 0 && cap_len > 0 {
+                let take = mic_len.min(cap_len);
+                let mic_samples = {
+                    let mut buf = mic_buffer.lock().unwrap();
+                    buf.drain_up_to(take)
+                };
+                let capture_samples = {
+                    let mut buf = capture_buffer.lock().unwrap();
+                    buf.drain_up_to(take)
+                };
+                mic_samples.iter().zip(&capture_samples)
+                    .map(|(m, c)| (m + c) * 0.5)
+                    .collect::<Vec<f32>>()
+            } else if mic_len > 0 {
+                let mut buf = mic_buffer.lock().unwrap();
+                buf.drain_all()
+            } else {
+                let mut buf = capture_buffer.lock().unwrap();
+                buf.drain_all()
             };
 
             // Feed to VAD + recognize

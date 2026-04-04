@@ -1,113 +1,131 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use sherpa_onnx::{
+    OfflineRecognizer, OfflineRecognizerConfig, OfflineSenseVoiceModelConfig,
+    SileroVadModelConfig, VadModelConfig, VoiceActivityDetector,
+};
+use std::cell::RefCell;
 use std::path::Path;
-use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-pub struct WhisperEngine {
-    ctx: WhisperContext,
+/// ASR engine using sherpa-onnx with SenseVoice + Silero VAD.
+///
+/// Replaces the previous WhisperEngine. Uses VAD to automatically segment
+/// speech, then runs SenseVoice offline recognition on each segment.
+pub struct SherpaEngine {
+    recognizer: OfflineRecognizer,
+    vad: VoiceActivityDetector,
+    remainder: RefCell<Vec<f32>>,
 }
 
-impl WhisperEngine {
-    /// Load a Whisper model from the given path.
-    pub fn new(model_path: &Path) -> Result<Self> {
-        let params = WhisperContextParameters::default();
-        let ctx = WhisperContext::new_with_params(
-            model_path.to_str().unwrap_or_default(),
-            params,
-        )?;
-        Ok(Self { ctx })
+// Safety: The underlying C pointers are used from a single tokio task,
+// matching the previous WhisperEngine usage pattern.
+unsafe impl Send for SherpaEngine {}
+
+impl SherpaEngine {
+    /// Load SenseVoice model and Silero VAD from the given directory.
+    ///
+    /// Expected files in `model_dir`:
+    /// - `model.int8.onnx` (SenseVoice int8 model)
+    /// - `tokens.txt` (token vocabulary)
+    /// - `silero_vad.onnx` (Silero VAD model)
+    pub fn new(model_dir: &Path) -> Result<Self> {
+        // Create Silero VAD
+        let vad_config = VadModelConfig {
+            silero_vad: SileroVadModelConfig {
+                model: Some(model_dir.join("silero_vad.onnx").to_string_lossy().into_owned()),
+                threshold: 0.5,
+                min_silence_duration: 0.25,
+                min_speech_duration: 0.25,
+                max_speech_duration: 8.0,
+                window_size: 512, // must be 512 for 16kHz
+            },
+            sample_rate: 16000,
+            num_threads: 1,
+            provider: Some("cpu".into()),
+            ..Default::default()
+        };
+        let vad = VoiceActivityDetector::create(&vad_config, 30.0)
+            .ok_or_else(|| anyhow!("Failed to create Silero VAD — check silero_vad.onnx path"))?;
+
+        // Create SenseVoice offline recognizer
+        let mut config = OfflineRecognizerConfig::default();
+        config.model_config.sense_voice = OfflineSenseVoiceModelConfig {
+            model: Some(model_dir.join("model.int8.onnx").to_string_lossy().into_owned()),
+            language: Some("auto".into()),
+            use_itn: true,
+        };
+        config.model_config.tokens =
+            Some(model_dir.join("tokens.txt").to_string_lossy().into_owned());
+        config.model_config.num_threads = 2;
+
+        let recognizer = OfflineRecognizer::create(&config)
+            .ok_or_else(|| anyhow!("Failed to create SenseVoice recognizer — check model files"))?;
+
+        eprintln!("[sherpa] SenseVoice + Silero VAD loaded from {:?}", model_dir);
+        Ok(Self { recognizer, vad })
     }
 
-    /// Check if audio chunk is mostly silence (RMS below threshold)
-    pub fn is_silence(audio: &[f32]) -> bool {
-        if audio.is_empty() {
-            return true;
-        }
-        let rms = (audio.iter().map(|s| s * s).sum::<f32>() / audio.len() as f32).sqrt();
-        eprintln!("[whisper] RMS: {:.6}", rms);
-        rms < 0.02
-    }
+    /// Feed audio samples (16kHz mono f32) to the VAD, then recognize any
+    /// complete speech segments. Returns zero or more transcribed text strings.
+    pub fn process_audio(&self, audio: &[f32]) -> Vec<String> {
+        let mut results = Vec::new();
 
-    /// Transcribe a chunk of 16kHz mono f32 audio.
-    /// `prompt` provides context from the previous transcription to improve continuity.
-    /// Returns the recognized text.
-    pub fn transcribe(&self, audio: &[f32], prompt: &str) -> Result<String> {
-        // Skip silence to avoid hallucinations
-        if Self::is_silence(audio) {
-            return Ok(String::new());
-        }
-
-        let mut state = self.ctx.create_state()?;
-        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-
-        params.set_language(Some("zh"));
-        params.set_print_special(false);
-        params.set_print_progress(false);
-        params.set_print_realtime(false);
-        params.set_print_timestamps(false);
-        params.set_suppress_blank(true);
-        params.set_suppress_non_speech_tokens(true);
-        params.set_single_segment(true);    // faster for short chunks
-
-        // Use previous transcription as context for better continuity
-        if !prompt.is_empty() {
-            params.set_initial_prompt(prompt);
-        }
-
-        state.full(params, audio)?;
-
-        let num_segments = state.full_n_segments()?;
-        let mut text = String::new();
-        for i in 0..num_segments {
-            if let Ok(segment) = state.full_get_segment_text(i) {
-                text.push_str(&segment);
+        // Feed VAD in 512-sample windows
+        for chunk in audio.chunks(512) {
+            if chunk.len() == 512 {
+                self.vad.accept_waveform(chunk);
             }
         }
 
-        let trimmed = text.trim().to_string();
-
-        if Self::is_garbage(&trimmed) {
-            return Ok(String::new());
-        }
-
-        Ok(trimmed)
-    }
-
-    fn is_garbage(text: &str) -> bool {
-        if text.is_empty() {
-            return true;
-        }
-        let char_count = text.chars().count();
-        if char_count < 4 {
-            return true;
-        }
-        // High ratio of non-CJK, non-ASCII printable chars = garbled
-        let total = char_count as f32;
-        let garbage_chars = text.chars().filter(|c| {
-            !c.is_ascii_alphanumeric()
-                && !c.is_ascii_punctuation()
-                && !c.is_ascii_whitespace()
-                && !('\u{4e00}'..='\u{9fff}').contains(c)
-                && !('\u{3000}'..='\u{303f}').contains(c)
-                && !('\u{ff00}'..='\u{ffef}').contains(c)
-                && !('\u{3400}'..='\u{4dbf}').contains(c)
-        }).count() as f32;
-        if garbage_chars / total > 0.3 {
-            return true;
-        }
-        // Whisper hallucination patterns on silence
-        let lower = text.to_lowercase();
-        let hallucinations = [
-            "thank you", "thanks for watching", "subscribe",
-            "please subscribe", "like and subscribe",
-            "you", "the", "i'm", "okay", "bye",
-            "字幕", "由 amara", "请不吝", "谢谢观看",
-            "...", "♪", "music",
-        ];
-        for pat in &hallucinations {
-            if lower.trim() == *pat || (lower.contains(pat) && char_count < 15) {
-                return true;
+        // Recognize each complete speech segment
+        while !self.vad.is_empty() {
+            if let Some(segment) = self.vad.front() {
+                let text = self.recognize_segment(segment.samples());
+                if !text.is_empty() {
+                    results.push(text);
+                }
+                self.vad.pop();
             }
         }
-        false
+
+        results
+    }
+
+    /// Flush any remaining speech buffered in the VAD (call when recording stops).
+    pub fn flush(&self) -> Vec<String> {
+        self.vad.flush();
+        let mut results = Vec::new();
+        while !self.vad.is_empty() {
+            if let Some(segment) = self.vad.front() {
+                let text = self.recognize_segment(segment.samples());
+                if !text.is_empty() {
+                    results.push(text);
+                }
+                self.vad.pop();
+            }
+        }
+        results
+    }
+
+    /// Reset the VAD state (e.g., when resuming after pause).
+    pub fn reset(&self) {
+        self.vad.reset();
+    }
+
+    /// Run SenseVoice recognition on a single audio segment.
+    fn recognize_segment(&self, samples: &[f32]) -> String {
+        let stream = self.recognizer.create_stream();
+        stream.accept_waveform(16000, samples);
+        self.recognizer.decode(&stream);
+
+        match stream.get_result() {
+            Some(result) => {
+                let text = result.text.trim().to_string();
+                if !text.is_empty() {
+                    eprintln!("[sherpa] recognized: {}", &text);
+                }
+                text
+            }
+            None => String::new(),
+        }
     }
 }

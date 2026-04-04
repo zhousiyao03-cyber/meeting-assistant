@@ -75,3 +75,8 @@ export interface MeetingRecord {
   summary: string;
   advices_json: string;
 }
+
+export interface BackendError {
+  source: string;
+  message: string;
+}
