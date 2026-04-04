@@ -15,15 +15,15 @@ pub struct MeetingRecord {
     pub advices_json: String,
 }
 
-pub fn db_path() -> PathBuf {
-    let home = dirs::home_dir().expect("No home dir");
+pub fn db_path() -> Result<PathBuf> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("No home dir"))?;
     let dir = home.join(".meeting-assistant");
-    let _ = fs::create_dir_all(&dir);
-    dir.join("history.db")
+    fs::create_dir_all(&dir)?;
+    Ok(dir.join("history.db"))
 }
 
 pub fn init_db() -> Result<Connection> {
-    let path = db_path();
+    let path = db_path()?;
     let conn = Connection::open(&path)?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS meetings (
