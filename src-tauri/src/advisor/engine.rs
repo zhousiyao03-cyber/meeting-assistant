@@ -41,14 +41,14 @@ impl AdvisorEngine {
     }
 
     /// Call the LLM with the given messages. Returns the assistant's response text.
-    async fn chat(&self, messages: &[LlmMessage]) -> Result<String> {
+    async fn chat(&self, messages: &[LlmMessage], max_tokens: u32) -> Result<String> {
         let url = format!("{}/chat/completions", self.base_url);
 
         let body = serde_json::json!({
             "model": self.model,
             "messages": messages,
             "temperature": 0.7,
-            "max_tokens": 500,
+            "max_tokens": max_tokens,
         });
 
         let mut req = self.client.post(&url).json(&body);
@@ -57,6 +57,15 @@ impl AdvisorEngine {
         }
 
         let resp = req.send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "LLM API error ({}): {}",
+                status,
+                if body.len() > 200 { &body[..200] } else { &body }
+            ));
+        }
         let json: serde_json::Value = resp.json().await?;
         let content = json["choices"][0]["message"]["content"]
             .as_str()
@@ -82,12 +91,23 @@ impl AdvisorEngine {
             system.push_str(&format!("\n\n参考文档：\n{}", reference_docs));
         }
 
+        // Truncate to last ~8000 chars to stay within LLM token limits
+        let truncated = if transcript.len() > 8000 {
+            let start = transcript.len() - 8000;
+            let break_at = transcript[start..].find(|c: char| c.is_whitespace())
+                .map(|i| start + i)
+                .unwrap_or(start);
+            &transcript[break_at..]
+        } else {
+            transcript
+        };
+
         let messages = vec![
             LlmMessage { role: "system".into(), content: system },
-            LlmMessage { role: "user".into(), content: format!("会议转录：\n{}", transcript) },
+            LlmMessage { role: "user".into(), content: format!("会议转录：\n{}", truncated) },
         ];
 
-        let response = self.chat(&messages).await?;
+        let response = self.chat(&messages, 500).await?;
         Ok(parse_summary(&response))
     }
 
@@ -102,11 +122,15 @@ impl AdvisorEngine {
     ) -> Result<SpeakingAdvice> {
         let mut system = template.system_prompt.clone();
         if !reference_docs.is_empty() {
-            system.push_str(&format!("\n\n参考文档（用于提供背景上下文）：\n{}", reference_docs));
+            system.push_str(&format!("\n\n参考文档：\n{}", reference_docs));
         }
 
         let user_msg = format!(
-            "会议转录：\n{}\n\n触发原因：{}\n\n请给出发言建议。",
+            "最近的对话内容：\n{}\n\n\
+             触发原因：{}\n\n\
+             请严格按以下格式输出，每项一行，不要多余文字：\n\
+             建议：（一句你可以直接说出口的话，不超过30字，必须引用对话中的具体内容）\n\
+             角度：（2-4个字的发言角度标签）",
             transcript, trigger_reason
         );
 
@@ -115,7 +139,7 @@ impl AdvisorEngine {
             LlmMessage { role: "user".into(), content: user_msg },
         ];
 
-        let response = self.chat(&messages).await?;
+        let response = self.chat(&messages, 150).await?;
         Ok(parse_advice(&response, trigger_reason, offset_secs))
     }
 }
@@ -147,22 +171,53 @@ fn parse_summary(text: &str) -> MeetingSummary {
 }
 
 fn parse_advice(text: &str, trigger_reason: &str, offset_secs: f64) -> SpeakingAdvice {
-    let lines: Vec<&str> = text.lines().collect();
-    let suggestion = text.trim().to_string();
-    let angle = lines
-        .iter()
-        .find(|l| l.contains("角度") || l.contains("视角"))
-        .map(|l| {
-            l.split_once(['：', ':'])
-                .map(|(_, v)| v.trim().to_string())
-                .unwrap_or_default()
-        })
-        .unwrap_or_default();
+    let mut suggestion = String::new();
+    let mut angle = String::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(val) = extract_field(trimmed, "建议") {
+            suggestion = val;
+        } else if let Some(val) = extract_field(trimmed, "角度") {
+            angle = val;
+        }
+    }
+
+    // Fallback: if structured parsing failed, use first non-empty line as suggestion
+    if suggestion.is_empty() {
+        suggestion = text
+            .lines()
+            .map(|l| l.trim())
+            .find(|l| !l.is_empty())
+            .unwrap_or("")
+            .to_string();
+        // Truncate overly long fallback
+        if suggestion.chars().count() > 60 {
+            suggestion = suggestion.chars().take(60).collect::<String>() + "...";
+        }
+    }
+
+    // Strip surrounding quotes from suggestion
+    suggestion = suggestion
+        .trim_start_matches(['\"', '"', '「'])
+        .trim_end_matches(['\"', '"', '」'])
+        .to_string();
 
     SpeakingAdvice {
         reason: trigger_reason.to_string(),
         suggestion,
         angle,
         timestamp: offset_secs,
+    }
+}
+
+/// Extract the value after a "key：value" or "key: value" pattern.
+fn extract_field(line: &str, key: &str) -> Option<String> {
+    if line.starts_with(key) {
+        line.split_once(['：', ':'])
+            .map(|(_, v)| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    } else {
+        None
     }
 }
