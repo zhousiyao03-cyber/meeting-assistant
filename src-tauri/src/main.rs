@@ -37,6 +37,12 @@ fn main() {
             commands::get_config,
             commands::save_app_config,
             commands::load_document,
+            commands::load_reference_doc,
+            commands::clear_reference_doc,
+            commands::set_active_template,
+            commands::get_recording_status,
+            commands::pause_recording,
+            commands::resume_recording,
             commands::save_meeting,
             commands::list_meetings,
         ])

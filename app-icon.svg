@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="mic" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#e0e7ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="16" y="16" width="480" height="480" rx="96" ry="96" fill="url(#bg)"/>
+
+  <!-- Speech bubble (right side) -->
+  <path d="M 310 120 Q 410 120 410 190 L 410 230 Q 410 300 310 300 L 290 300 L 260 340 L 260 300 Q 200 300 200 230 L 200 190 Q 200 120 310 120 Z" fill="rgba(255,255,255,0.25)"/>
+
+  <!-- Dots in speech bubble -->
+  <circle cx="265" cy="210" r="14" fill="white" opacity="0.9"/>
+  <circle cx="310" cy="210" r="14" fill="white" opacity="0.9"/>
+  <circle cx="355" cy="210" r="14" fill="white" opacity="0.9"/>
+
+  <!-- Microphone body -->
+  <rect x="108" y="180" width="76" height="120" rx="38" ry="38" fill="url(#mic)"/>
+
+  <!-- Microphone stand arc -->
+  <path d="M 90 280 Q 90 350 146 350 Q 202 350 202 280" fill="none" stroke="white" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- Microphone stand vertical -->
+  <line x1="146" y1="350" x2="146" y2="395" stroke="white" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- Microphone base -->
+  <line x1="116" y1="395" x2="176" y2="395" stroke="white" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- Sound waves -->
+  <path d="M 205 220 Q 225 200 205 180" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M 220 235 Q 250 200 220 165" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="6" stroke-linecap="round"/>
+</svg>

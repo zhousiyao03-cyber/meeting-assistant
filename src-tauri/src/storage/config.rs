@@ -29,9 +29,9 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             llm: LlmConfig {
-                base_url: "http://localhost:11434/v1".into(),
+                base_url: "https://llmgate.io/v1".into(),
                 api_key: String::new(),
-                model: "llama3.2".into(),
+                model: "gpt-5.4".into(),
             },
             audio: AudioConfig {
                 mic_device: String::new(),

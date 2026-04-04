@@ -5,14 +5,15 @@ import { SummaryPanel } from "./SummaryPanel";
 import { AdvicePanel } from "./AdvicePanel";
 import { useTauriEvents } from "../../hooks/useTauriEvents";
 import { useRecording } from "../../hooks/useRecording";
-import { getConfig } from "../../lib/tauri";
+import { getConfig, loadReferenceDoc } from "../../lib/tauri";
+import { open } from "@tauri-apps/plugin-dialog";
 
 interface NarrowViewProps {
   onSettings: () => void;
   onFullView: () => void;
 }
 
-export function NarrowView({ onSettings, onFullView: _onFullView }: NarrowViewProps) {
+export function NarrowView({ onSettings, onFullView }: NarrowViewProps) {
   const { transcripts, summary, advices } = useTauriEvents();
   const recording = useRecording();
   const [micDevice, setMicDevice] = useState("");
@@ -35,6 +36,21 @@ export function NarrowView({ onSettings, onFullView: _onFullView }: NarrowViewPr
     recording.start(micDevice, captureDevice);
   };
 
+  const handleDocuments = async () => {
+    const file = await open({
+      multiple: false,
+      filters: [{ name: "Documents", extensions: ["md", "txt", "text", "pdf"] }],
+    });
+    if (file) {
+      try {
+        const filename = await loadReferenceDoc(file);
+        console.log("Loaded reference doc:", filename);
+      } catch (e) {
+        console.error("Failed to load document:", e);
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-primary)]">
       <ControlBar
@@ -44,9 +60,10 @@ export function NarrowView({ onSettings, onFullView: _onFullView }: NarrowViewPr
         onStart={handleStart}
         onPause={recording.pause}
         onResume={recording.resume}
-        onStop={recording.stop}
+        onStop={() => recording.stop(summary, advices)}
         onSettings={onSettings}
-        onDocuments={() => {}}
+        onDocuments={handleDocuments}
+        onFullView={onFullView}
       />
       <TranscriptMini transcripts={transcripts} />
       <SummaryPanel summary={summary} />

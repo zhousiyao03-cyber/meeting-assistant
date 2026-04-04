@@ -10,6 +10,7 @@ import type {
   ModelStatus,
   LoadedDocument,
   ModelDownloadProgress,
+  MeetingRecord,
 } from "./types";
 
 // Commands
@@ -49,6 +50,28 @@ export const saveConfig = (config: AppConfig) =>
 
 export const loadDocument = (path: string) =>
   invoke<LoadedDocument>("load_document", { path });
+
+export const loadReferenceDoc = (path: string) =>
+  invoke<string>("load_reference_doc", { path });
+
+export const clearReferenceDoc = () =>
+  invoke<void>("clear_reference_doc");
+
+export const getRecordingStatus = () =>
+  invoke<{ is_recording: boolean; is_paused: boolean; elapsed_secs: number }>("get_recording_status");
+
+export const pauseRecording = () => invoke<void>("pause_recording");
+
+export const resumeRecording = () => invoke<void>("resume_recording");
+
+export const saveMeeting = (record: MeetingRecord) =>
+  invoke<void>("save_meeting", { record });
+
+export const listMeetings = () =>
+  invoke<MeetingRecord[]>("list_meetings");
+
+export const setActiveTemplate = (id: string) =>
+  invoke<void>("set_active_template", { id });
 
 // Event listeners
 export const onNewTranscript = (

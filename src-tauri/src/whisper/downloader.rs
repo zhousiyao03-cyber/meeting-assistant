@@ -35,20 +35,37 @@ where
         return Ok(dest);
     }
 
+    let tmp_dest = dest.with_extension("bin.tmp");
+
     let client = reqwest::Client::new();
     let resp = client.get(MODEL_URL).send().await?;
     let total = resp.content_length().unwrap_or(0);
     let mut downloaded: u64 = 0;
 
-    let mut file = fs::File::create(&dest)?;
+    let mut file = fs::File::create(&tmp_dest)?;
     let mut stream = resp.bytes_stream();
     use futures_util::StreamExt;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        file.write_all(&chunk)?;
-        downloaded += chunk.len() as u64;
-        on_progress(downloaded, total);
+    let result: Result<()> = async {
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            file.write_all(&chunk)?;
+            downloaded += chunk.len() as u64;
+            on_progress(downloaded, total);
+        }
+        Ok(())
+    }.await;
+
+    if let Err(e) = result {
+        let _ = fs::remove_file(&tmp_dest);
+        return Err(e);
     }
 
+    // Verify size if known
+    if total > 0 && downloaded != total {
+        let _ = fs::remove_file(&tmp_dest);
+        return Err(anyhow::anyhow!("Download incomplete: got {} of {} bytes", downloaded, total));
+    }
+
+    fs::rename(&tmp_dest, &dest)?;
     Ok(dest)
 }

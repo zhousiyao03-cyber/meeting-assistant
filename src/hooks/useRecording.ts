@@ -1,12 +1,38 @@
-import { useState, useRef, useCallback } from "react";
-import { startRecording, stopRecording } from "../lib/tauri";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { startRecording, stopRecording, pauseRecording, resumeRecording, getRecordingStatus, saveMeeting, getTranscript } from "../lib/tauri";
+import type { MeetingSummary, SpeakingAdvice } from "../lib/types";
 
 export type RecordingStatus = "idle" | "recording" | "paused";
 
 export function useRecording() {
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const [elapsed, setElapsed] = useState(0);
+  const elapsedRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Keep ref in sync with state for use in callbacks
+  useEffect(() => { elapsedRef.current = elapsed; }, [elapsed]);
+
+  // Sync with backend state on mount
+  useEffect(() => {
+    getRecordingStatus().then((s) => {
+      if (s.is_recording) {
+        setStatus(s.is_paused ? "paused" : "recording");
+        setElapsed(s.elapsed_secs);
+        if (!s.is_paused) {
+          timerRef.current = setInterval(() => {
+            setElapsed((prev) => prev + 1);
+          }, 1000);
+        }
+      }
+    }).catch(console.error);
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, []);
 
   const start = useCallback(
     async (micDevice: string, captureDevice: string) => {
@@ -17,7 +43,7 @@ export function useRecording() {
       }, 1000);
       try {
         await startRecording(micDevice, captureDevice);
-      } catch (e) {
+      } catch (e: any) {
         console.error("Failed to start recording:", e);
         setStatus("idle");
         if (timerRef.current) {
@@ -29,16 +55,41 @@ export function useRecording() {
     [],
   );
 
-  const stop = useCallback(async () => {
+  const stop = useCallback(async (summary?: MeetingSummary | null, advices?: SpeakingAdvice[]) => {
+    const currentElapsed = elapsedRef.current;
     await stopRecording();
     setStatus("idle");
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+
+    // Auto-save meeting history
+    try {
+      const segments = await getTranscript();
+      const transcript = segments.map((s) => s.text).join(" ");
+      if (transcript.length > 0) {
+        await saveMeeting({
+          id: crypto.randomUUID(),
+          template_name: "技术评审会",
+          started_at: new Date().toISOString(),
+          duration_secs: currentElapsed,
+          transcript,
+          summary: summary ? summary.points.join("\n") : "",
+          advices_json: JSON.stringify(advices || []),
+        });
+      }
+    } catch (e) {
+      console.error("Failed to save meeting:", e);
+    }
   }, []);
 
-  const pause = useCallback(() => {
+  const pause = useCallback(async () => {
+    try {
+      await pauseRecording();
+    } catch (e) {
+      console.error("Failed to pause:", e);
+    }
     setStatus("paused");
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -46,7 +97,12 @@ export function useRecording() {
     }
   }, []);
 
-  const resume = useCallback(() => {
+  const resume = useCallback(async () => {
+    try {
+      await resumeRecording();
+    } catch (e) {
+      console.error("Failed to resume:", e);
+    }
     setStatus("recording");
     timerRef.current = setInterval(() => {
       setElapsed((prev) => prev + 1);

@@ -1,3 +1,4 @@
+import { useState, useCallback, useRef } from "react";
 import type { MeetingSummary, SpeakingAdvice } from "../../lib/types";
 import { AdviceCard } from "../shared/AdviceCard";
 
@@ -7,8 +8,37 @@ interface CopilotPanelProps {
 }
 
 export function CopilotPanel({ summary, advices }: CopilotPanelProps) {
+  const [width, setWidth] = useState(420);
+  const dragging = useRef(false);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    const startX = e.clientX;
+    const startWidth = width;
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      const newWidth = startWidth - (e.clientX - startX);
+      setWidth(Math.max(280, Math.min(700, newWidth)));
+    };
+
+    const onMouseUp = () => {
+      dragging.current = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [width]);
+
   return (
-    <div className="w-80 flex flex-col">
+    <div className="flex flex-col border-l border-[var(--border)] relative" style={{ width, minWidth: 280 }}>
+      <div
+        onMouseDown={onMouseDown}
+        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-[var(--accent-purple)]/40 active:bg-[var(--accent-purple)]/60 z-10"
+      />
       <div className="px-4 py-3 border-b border-[var(--border)]">
         <h2 className="text-sm font-medium">AI Copilot</h2>
       </div>

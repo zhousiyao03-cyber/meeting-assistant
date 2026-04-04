@@ -10,6 +10,7 @@ interface ControlBarProps {
   onStop: () => void;
   onSettings: () => void;
   onDocuments: () => void;
+  onFullView: () => void;
 }
 
 export function ControlBar({
@@ -22,6 +23,7 @@ export function ControlBar({
   onStop,
   onSettings,
   onDocuments,
+  onFullView,
 }: ControlBarProps) {
   return (
     <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
@@ -35,6 +37,13 @@ export function ControlBar({
         {formattedTime}
       </span>
       <div className="flex items-center gap-1">
+        <button
+          onClick={onFullView}
+          className="p-1.5 rounded hover:bg-[var(--bg-card)] text-sm"
+          title="展开视图"
+        >
+          ⛶
+        </button>
         <button
           onClick={onDocuments}
           className="p-1.5 rounded hover:bg-[var(--bg-card)] text-sm"

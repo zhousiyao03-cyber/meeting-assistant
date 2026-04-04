@@ -65,3 +65,13 @@ export interface ModelDownloadProgress {
   downloaded: number;
   total: number;
 }
+
+export interface MeetingRecord {
+  id: string;
+  template_name: string;
+  started_at: string;
+  duration_secs: number;
+  transcript: string;
+  summary: string;
+  advices_json: string;
+}

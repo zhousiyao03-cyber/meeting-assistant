@@ -19,7 +19,13 @@ export function useTauriEvents() {
   useEffect(() => {
     const setup = async () => {
       const u1 = await onNewTranscript((segment) => {
-        setTranscripts((prev) => [...prev, segment]);
+        setTranscripts((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.text === segment.text && Math.abs(last.offset_secs - segment.offset_secs) < 1) {
+            return prev;
+          }
+          return [...prev, segment];
+        });
       });
       const u2 = await onMeetingSummary((s) => {
         setSummary(s);

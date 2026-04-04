@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { MeetingTemplate, LoadedDocument } from "../../lib/types";
-import { getTemplates } from "../../lib/tauri";
+import { getTemplates, setActiveTemplate } from "../../lib/tauri";
 
 interface SidebarProps {
   onStop: () => void;
@@ -21,7 +21,7 @@ export function Sidebar({
   useEffect(() => {
     getTemplates().then((t) => {
       setTemplates(t);
-      if (t.length > 0) setSelectedTemplate(t[0].id);
+      if (t.length > 0) { setSelectedTemplate(t[0].id); setActiveTemplate(t[0].id); }
     });
   }, []);
 
@@ -40,7 +40,7 @@ export function Sidebar({
           {templates.map((t) => (
             <button
               key={t.id}
-              onClick={() => setSelectedTemplate(t.id)}
+              onClick={() => { setSelectedTemplate(t.id); setActiveTemplate(t.id); }}
               className={`w-full text-left px-3 py-2 rounded text-sm ${
                 selectedTemplate === t.id
                   ? "bg-[var(--accent-purple)]/20 text-[var(--accent-purple)]"

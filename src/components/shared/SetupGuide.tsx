@@ -69,7 +69,7 @@ export function SetupGuide({ onComplete }: SetupGuideProps) {
         <div className="max-w-md text-center space-y-4">
           <h2 className="text-lg font-medium">Step 2: 下载语音识别模型</h2>
           <p className="text-sm text-[var(--text-secondary)]">
-            Whisper small 模型 (~466MB)，用于本地语音转文字。
+            Whisper medium 模型 (~1.5GB)，用于本地语音转文字。
           </p>
           {downloading ? (
             <div className="w-full bg-[var(--bg-card)] rounded-full h-3">
@@ -96,7 +96,7 @@ export function SetupGuide({ onComplete }: SetupGuideProps) {
         <div className="max-w-md text-center space-y-4">
           <h2 className="text-lg font-medium">Step 3: 配置 LLM</h2>
           <p className="text-sm text-[var(--text-secondary)]">
-            默认使用本地 Ollama。确保 Ollama 已运行并加载了模型。
+            请在设置中配置 LLM API 地址和密钥，用于会议总结和发言建议。
           </p>
           <button
             onClick={onComplete}

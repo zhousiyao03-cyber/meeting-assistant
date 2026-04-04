@@ -28,8 +28,9 @@ impl WhisperEngine {
     }
 
     /// Transcribe a chunk of 16kHz mono f32 audio.
+    /// `prompt` provides context from the previous transcription to improve continuity.
     /// Returns the recognized text.
-    pub fn transcribe(&self, audio: &[f32]) -> Result<String> {
+    pub fn transcribe(&self, audio: &[f32], prompt: &str) -> Result<String> {
         // Skip silence to avoid hallucinations
         if Self::is_silence(audio) {
             return Ok(String::new());
@@ -45,6 +46,12 @@ impl WhisperEngine {
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
         params.set_suppress_non_speech_tokens(true);
+        params.set_single_segment(true);    // faster for short chunks
+
+        // Use previous transcription as context for better continuity
+        if !prompt.is_empty() {
+            params.set_initial_prompt(prompt);
+        }
 
         state.full(params, audio)?;
 

@@ -30,9 +30,7 @@ export function LLMSettings({ config, onChange }: LLMSettingsProps) {
             onChange={(e) => updateLlm({ base_url: e.target.value })}
             className="w-full bg-[var(--bg-secondary)] border border-[var(--border)] rounded px-3 py-2 text-sm"
           >
-            <option value="http://localhost:11434/v1">Ollama (Local)</option>
-            <option value="https://api.openai.com/v1">OpenAI</option>
-            <option value="https://api.anthropic.com/v1">Anthropic</option>
+            <option value="https://llmgate.io/v1">OpenAI (LLMGate)</option>
           </select>
           <p className="text-xs text-[var(--text-muted)] mt-1">
             支持 OpenAI 兼容 API 格式，默认走本地 Ollama (localhost:11434)
