@@ -9,6 +9,7 @@ export function useRecording() {
   const [elapsed, setElapsed] = useState(0);
   const elapsedRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startedAtRef = useRef<string>("");
 
   // Keep ref in sync with state for use in callbacks
   useEffect(() => { elapsedRef.current = elapsed; }, [elapsed]);
@@ -38,6 +39,7 @@ export function useRecording() {
     async (micDevice: string, captureDevice: string) => {
       setStatus("recording");
       setElapsed(0);
+      startedAtRef.current = new Date().toISOString();
       timerRef.current = setInterval(() => {
         setElapsed((prev) => prev + 1);
       }, 1000);
@@ -55,7 +57,11 @@ export function useRecording() {
     [],
   );
 
-  const stop = useCallback(async (summary?: MeetingSummary | null, advices?: SpeakingAdvice[]) => {
+  const stop = useCallback(async (
+    summary?: MeetingSummary | null,
+    advices?: SpeakingAdvice[],
+    templateName?: string,
+  ) => {
     const currentElapsed = elapsedRef.current;
     await stopRecording();
     setStatus("idle");
@@ -71,8 +77,8 @@ export function useRecording() {
       if (transcript.length > 0) {
         await saveMeeting({
           id: crypto.randomUUID(),
-          template_name: "技术评审会",
-          started_at: new Date().toISOString(),
+          template_name: templateName || "未选择模板",
+          started_at: startedAtRef.current || new Date().toISOString(),
           duration_secs: currentElapsed,
           transcript,
           summary: summary ? summary.points.join("\n") : "",
