@@ -11,6 +11,7 @@ import type {
   LoadedDocument,
   ModelDownloadProgress,
   MeetingRecord,
+  MeetingMinutes,
   BackendError,
 } from "./types";
 
@@ -73,6 +74,12 @@ export const listMeetings = () =>
 
 export const setActiveTemplate = (id: string) =>
   invoke<void>("set_active_template", { id });
+
+export const generateMeetingMinutes = (transcript: string, summary: string) =>
+  invoke<MeetingMinutes>("generate_meeting_minutes", { transcript, summary });
+
+export const deleteMeeting = (id: string) =>
+  invoke<void>("delete_meeting", { id });
 
 // Event listeners
 export const onNewTranscript = (

@@ -68,12 +68,21 @@ export interface ModelDownloadProgress {
 
 export interface MeetingRecord {
   id: string;
+  title: string;
   template_name: string;
   started_at: string;
   duration_secs: number;
   transcript: string;
   summary: string;
+  action_items: string;
   advices_json: string;
+}
+
+export interface MeetingMinutes {
+  title: string;
+  key_points: string[];
+  action_items: string[];
+  decisions: string[];
 }
 
 export interface BackendError {

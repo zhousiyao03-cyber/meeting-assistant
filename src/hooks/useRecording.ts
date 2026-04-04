@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { startRecording, stopRecording, pauseRecording, resumeRecording, getRecordingStatus, saveMeeting, getTranscript } from "../lib/tauri";
+import { startRecording, stopRecording, pauseRecording, resumeRecording, getRecordingStatus, saveMeeting, getTranscript, generateMeetingMinutes } from "../lib/tauri";
 import type { MeetingSummary, SpeakingAdvice } from "../lib/types";
 
 export type RecordingStatus = "idle" | "recording" | "paused";
@@ -61,7 +61,7 @@ export function useRecording() {
     summary?: MeetingSummary | null,
     advices?: SpeakingAdvice[],
     templateName?: string,
-  ) => {
+  ): Promise<string | undefined> => {
     const currentElapsed = elapsedRef.current;
     await stopRecording();
     setStatus("idle");
@@ -70,24 +70,43 @@ export function useRecording() {
       timerRef.current = null;
     }
 
-    // Auto-save meeting history
+    // Auto-save meeting history with generated minutes
     try {
       const segments = await getTranscript();
       const transcript = segments.map((s) => s.text).join(" ");
       if (transcript.length > 0) {
+        const summaryText = summary ? summary.points.join("\n") : "";
+
+        // Generate meeting minutes via LLM
+        let title = templateName || "会议纪要";
+        let actionItems = "";
+        try {
+          const minutes = await generateMeetingMinutes(transcript, summaryText);
+          title = minutes.title || title;
+          actionItems = minutes.action_items.join("\n");
+        } catch (e) {
+          console.error("Failed to generate minutes:", e);
+        }
+
+        const meetingId = crypto.randomUUID();
         await saveMeeting({
-          id: crypto.randomUUID(),
+          id: meetingId,
+          title,
           template_name: templateName || "未选择模板",
           started_at: startedAtRef.current || new Date().toISOString(),
           duration_secs: currentElapsed,
           transcript,
-          summary: summary ? summary.points.join("\n") : "",
+          summary: summaryText,
+          action_items: actionItems,
           advices_json: JSON.stringify(advices || []),
         });
+
+        return meetingId;
       }
     } catch (e) {
       console.error("Failed to save meeting:", e);
     }
+    return undefined;
   }, []);
 
   const pause = useCallback(async () => {

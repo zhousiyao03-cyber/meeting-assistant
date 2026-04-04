@@ -2,10 +2,11 @@ import { useState } from "react";
 import { NarrowView } from "./components/narrow/NarrowView";
 import { FullView } from "./components/full/FullView";
 import { SettingsView } from "./components/settings/SettingsView";
+import { MeetingHistory } from "./components/history/MeetingHistory";
 import { useTauriEvents } from "./hooks/useTauriEvents";
 import { useRecording } from "./hooks/useRecording";
 
-type View = "narrow" | "full" | "settings";
+type View = "narrow" | "full" | "settings" | "history";
 
 export default function App() {
   const [view, setView] = useState<View>("narrow");
@@ -18,6 +19,7 @@ export default function App() {
         <NarrowView
           onSettings={() => setView("settings")}
           onFullView={() => setView("full")}
+          onHistory={() => setView("history")}
           events={events}
           recording={recording}
         />
@@ -31,6 +33,9 @@ export default function App() {
       )}
       {view === "settings" && (
         <SettingsView onBack={() => setView("narrow")} />
+      )}
+      {view === "history" && (
+        <MeetingHistory onBack={() => setView("narrow")} />
       )}
     </div>
   );

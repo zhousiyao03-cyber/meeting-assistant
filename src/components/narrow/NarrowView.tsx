@@ -8,11 +8,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 interface NarrowViewProps {
   onSettings: () => void;
   onFullView: () => void;
+  onHistory: () => void;
   events: ReturnType<typeof import("../../hooks/useTauriEvents").useTauriEvents>;
   recording: ReturnType<typeof import("../../hooks/useRecording").useRecording>;
 }
 
-export function NarrowView({ onSettings, onFullView, events, recording }: NarrowViewProps) {
+export function NarrowView({ onSettings, onFullView, onHistory, events, recording }: NarrowViewProps) {
   const { transcripts, summary, advices } = events;
   const [micDevice, setMicDevice] = useState("");
   const [captureDevice, setCaptureDevice] = useState("");
@@ -67,6 +68,14 @@ export function NarrowView({ onSettings, onFullView, events, recording }: Narrow
       <TranscriptMini transcripts={transcripts} />
       <SummaryPanel summary={summary} />
       <AdvicePanel advices={advices} />
+      <div className="border-t border-[var(--border)] px-4 py-2 flex justify-end">
+        <button
+          onClick={onHistory}
+          className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          历史记录
+        </button>
+      </div>
     </div>
   );
 }
