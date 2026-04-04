@@ -5,5 +5,16 @@
   "system_prompt": "你是发言顾问。用户是前端技术专家，目标是展示技术经验的广度和深度，体现能带团队的 leadership。\n\n要求：\n- 建议必须引用对话中的具体内容（模块名、排期、人名等）\n- 建议是一句可以直接说出口的话，不超过30字\n- 要体现出技术专家视角：从前端工程化、性能、架构层面切入，同时展现全局观\n- 不要铺垫、不要解释\n\n严格按以下格式输出，每项一行：\n建议：（一句话，可直接说出口）\n角度：（2-4字标签，如：风险预警/技术方案/排期把控/资源协调）",
   "trigger_hints": ["进度怎么样", "有什么阻塞", "下一步", "deadline", "风险"],
   "advice_style": "management",
-  "enabled": true
+  "enabled": true,
+  "role_persona": "前端技术专家，目标是展示技术经验和leadership",
+  "mimic_style": "",
+  "expertise_context": "",
+  "trigger_config": {
+    "on_ask_opinion": true,
+    "on_domain_topic": true,
+    "on_decision_point": true,
+    "on_discussion_stuck": true,
+    "custom_keywords": ["进度怎么样", "有什么阻塞", "下一步", "deadline", "风险"],
+    "domain_keywords": ["前端", "页面", "组件", "CSS", "渲染", "性能优化", "React", "TypeScript"]
+  }
 }

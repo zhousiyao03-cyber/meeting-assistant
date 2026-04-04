@@ -12,6 +12,49 @@ pub struct MeetingTemplate {
     pub trigger_hints: Vec<String>,
     pub advice_style: String,
     pub enabled: bool,
+    // New configurable fields
+    #[serde(default)]
+    pub role_persona: String,       // e.g. "前端技术专家，目标成为小组长"
+    #[serde(default)]
+    pub mimic_style: String,        // e.g. "像张一鸣一样简洁直接" or custom prompt
+    #[serde(default)]
+    pub expertise_context: String,  // professional background/knowledge to inject
+    #[serde(default)]
+    pub trigger_config: TriggerConfig, // configurable trigger settings
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TriggerConfig {
+    #[serde(default = "default_true")]
+    pub on_ask_opinion: bool,       // trigger when someone asks group opinion
+    #[serde(default = "default_true")]
+    pub on_domain_topic: bool,      // trigger when discussion touches your domain
+    #[serde(default = "default_true")]
+    pub on_decision_point: bool,    // trigger on disagreement/decision needed
+    #[serde(default = "default_true")]
+    pub on_discussion_stuck: bool,  // trigger when discussion is stuck
+    #[serde(default)]
+    pub custom_keywords: Vec<String>, // additional trigger keywords
+    #[serde(default)]
+    pub domain_keywords: Vec<String>, // domain-specific keywords
+}
+
+fn default_true() -> bool { true }
+
+impl Default for TriggerConfig {
+    fn default() -> Self {
+        Self {
+            on_ask_opinion: true,
+            on_domain_topic: true,
+            on_decision_point: true,
+            on_discussion_stuck: true,
+            custom_keywords: vec![],
+            domain_keywords: vec![
+                "前端".into(), "页面".into(), "组件".into(), "CSS".into(),
+                "渲染".into(), "性能优化".into(), "React".into(), "TypeScript".into(),
+            ],
+        }
+    }
 }
 
 /// Returns ~/.meeting-assistant/templates/

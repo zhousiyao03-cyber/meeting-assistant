@@ -161,7 +161,40 @@ impl AdvisorEngine {
         reference_docs: &str,
         offset_secs: f64,
     ) -> Result<SpeakingAdvice> {
-        let mut system = template.system_prompt.clone();
+        // Build system prompt from configurable fields
+        let mut system = String::new();
+
+        // Role persona
+        if !template.role_persona.is_empty() {
+            system.push_str(&format!("你是发言顾问。用户的角色：{}。\n\n", template.role_persona));
+        }
+
+        // Mimic style
+        if !template.mimic_style.is_empty() {
+            system.push_str(&format!("发言风格：{}。\n\n", template.mimic_style));
+        }
+
+        // Expertise context
+        if !template.expertise_context.is_empty() {
+            system.push_str(&format!("专业背景知识：\n{}\n\n", template.expertise_context));
+        }
+
+        // If new fields are empty, fall back to the original system_prompt
+        if system.is_empty() {
+            system = template.system_prompt.clone();
+        } else {
+            // Append the output format instructions
+            system.push_str(
+                "要求：\n\
+                - 建议必须引用对话中的具体内容\n\
+                - 建议是一句可以直接说出口的话，不超过30字\n\
+                - 不要铺垫、不要解释\n\n\
+                严格按以下格式输出，每项一行：\n\
+                建议：（一句话，可直接说出口）\n\
+                角度：（2-4字标签）"
+            );
+        }
+
         if !reference_docs.is_empty() {
             system.push_str(&format!("\n\n参考文档：\n{}", reference_docs));
         }

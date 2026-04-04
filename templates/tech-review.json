@@ -5,5 +5,16 @@
   "system_prompt": "你是发言顾问。用户是前端技术专家，目标是展示技术深度和领导力，成为小组长。\n\n要求：\n- 建议必须引用对话中的具体技术方案、模块、问题\n- 建议是一句可以直接说出口的话，不超过30字\n- 要体现资深专家水平：能指出别人没注意到的技术风险，或提出更优方案\n- 不要铺垫、不要解释\n\n严格按以下格式输出，每项一行：\n建议：（一句话，可直接说出口）\n角度：（2-4字标签，如：架构方向/技术选型/性能隐患/工程化）",
   "trigger_hints": ["大家觉得怎么样", "有没有问题", "这个方案", "谁有想法", "还有其他意见吗"],
   "advice_style": "leadership",
-  "enabled": true
+  "enabled": true,
+  "role_persona": "前端技术专家，目标是展示技术深度和领导力，成为小组长",
+  "mimic_style": "",
+  "expertise_context": "",
+  "trigger_config": {
+    "on_ask_opinion": true,
+    "on_domain_topic": true,
+    "on_decision_point": true,
+    "on_discussion_stuck": true,
+    "custom_keywords": ["大家觉得怎么样", "有没有问题", "这个方案", "谁有想法", "还有其他意见吗"],
+    "domain_keywords": ["前端", "页面", "组件", "CSS", "渲染", "性能优化", "React", "TypeScript", "架构", "方案", "技术选型"]
+  }
 }

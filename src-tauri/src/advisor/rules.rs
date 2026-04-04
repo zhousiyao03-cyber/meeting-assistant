@@ -1,4 +1,5 @@
 use serde::Serialize;
+use crate::advisor::templates::TriggerConfig;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct TriggerResult {
@@ -9,16 +10,26 @@ pub struct TriggerResult {
 /// Run all trigger checks in priority order. Returns the first match.
 pub fn evaluate_triggers(
     recent_text: &str,
-    hints: &[String],
+    trigger_config: &TriggerConfig,
     window_seconds: f64,
 ) -> Option<TriggerResult> {
-    let checks = [
-        check_asking_for_opinion(recent_text),
-        check_frontend_topic(recent_text),
-        check_hint_triggers(recent_text, hints),
-        check_decision_point(recent_text),
-        check_discussion_stuck(recent_text, window_seconds),
-    ];
+    let mut checks = Vec::new();
+
+    if trigger_config.on_ask_opinion {
+        checks.push(check_asking_for_opinion(recent_text));
+    }
+    if trigger_config.on_domain_topic && !trigger_config.domain_keywords.is_empty() {
+        checks.push(check_domain_topic(recent_text, &trigger_config.domain_keywords));
+    }
+    if !trigger_config.custom_keywords.is_empty() {
+        checks.push(check_hint_triggers(recent_text, &trigger_config.custom_keywords));
+    }
+    if trigger_config.on_decision_point {
+        checks.push(check_decision_point(recent_text));
+    }
+    if trigger_config.on_discussion_stuck {
+        checks.push(check_discussion_stuck(recent_text, window_seconds));
+    }
 
     checks.into_iter().find(|r| r.triggered)
 }
@@ -63,23 +74,9 @@ fn check_asking_for_opinion(transcript: &str) -> TriggerResult {
     TriggerResult { triggered: false, reason: String::new() }
 }
 
-/// Detect when discussion touches frontend-related topics.
-fn check_frontend_topic(transcript: &str) -> TriggerResult {
-    let frontend_keywords = [
-        // Frontend tech
-        "前端", "页面", "组件", "样式", "CSS", "布局",
-        "渲染", "性能优化", "首屏", "加载速度", "白屏",
-        "交互", "动画", "响应式", "适配",
-        // Frontend frameworks/tools
-        "React", "Vue", "Webpack", "Vite",
-        "TypeScript", "JavaScript", "Node",
-        // Frontend concerns
-        "用户体验", "UI", "UX", "埋点", "监控",
-        "兼容性", "浏览器", "端上", "Webview",
-        "接口联调", "mock", "API对接",
-    ];
-
-    // Only trigger if frontend keywords appear in recent text (last ~100 chars)
+/// Detect when discussion touches domain-specific topics.
+fn check_domain_topic(transcript: &str, domain_keywords: &[String]) -> TriggerResult {
+    // Only trigger if domain keywords appear in recent text (last ~200 chars)
     // to avoid triggering on old mentions
     let recent_tail = if transcript.len() > 200 {
         &transcript[transcript.len() - 200..]
@@ -87,15 +84,15 @@ fn check_frontend_topic(transcript: &str) -> TriggerResult {
         transcript
     };
 
-    let matched: Vec<&&str> = frontend_keywords
+    let matched: Vec<&String> = domain_keywords
         .iter()
-        .filter(|kw| recent_tail.contains(*kw))
+        .filter(|kw| recent_tail.contains(kw.as_str()))
         .collect();
 
     if !matched.is_empty() {
         return TriggerResult {
             triggered: true,
-            reason: format!("讨论涉及前端领域：{}", matched.iter().take(3).map(|s| **s).collect::<Vec<_>>().join("、")),
+            reason: format!("讨论涉及专业领域：{}", matched.iter().take(3).map(|s| s.as_str()).collect::<Vec<_>>().join("、")),
         };
     }
 
@@ -220,6 +217,11 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::advisor::templates::TriggerConfig;
+
+    fn default_config() -> TriggerConfig {
+        TriggerConfig::default()
+    }
 
     #[test]
     fn test_asking_opinion() {
@@ -235,10 +237,11 @@ mod tests {
     }
 
     #[test]
-    fn test_frontend_topic() {
-        let result = check_frontend_topic("这个组件的渲染性能有点问题");
+    fn test_domain_topic() {
+        let keywords = vec!["组件".into(), "渲染".into(), "CSS".into()];
+        let result = check_domain_topic("这个组件的渲染性能有点问题", &keywords);
         assert!(result.triggered);
-        assert!(result.reason.contains("前端领域"));
+        assert!(result.reason.contains("专业领域"));
     }
 
     #[test]
@@ -265,5 +268,27 @@ mod tests {
     fn test_stuck() {
         let result = check_discussion_stuck("嗯，那个，就是说...", 10.0);
         assert!(result.triggered);
+    }
+
+    #[test]
+    fn test_evaluate_triggers_with_config() {
+        let config = default_config();
+        let result = evaluate_triggers("这个方案大家觉得怎么样", &config, 10.0);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_evaluate_triggers_domain_disabled() {
+        let config = TriggerConfig {
+            on_ask_opinion: false,
+            on_domain_topic: false,
+            on_decision_point: false,
+            on_discussion_stuck: false,
+            custom_keywords: vec![],
+            domain_keywords: vec!["前端".into()],
+        };
+        // Nothing should trigger since all flags are off
+        let result = evaluate_triggers("前端组件渲染大家觉得怎么样", &config, 10.0);
+        assert!(result.is_none());
     }
 }

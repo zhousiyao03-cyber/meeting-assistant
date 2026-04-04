@@ -380,7 +380,7 @@ pub async fn start_recording(
                         }
 
                         if let Some(trigger) = crate::advisor::rules::evaluate_triggers(
-                            &recent, &tmpl.trigger_hints, 10.0
+                            &recent, &tmpl.trigger_config, 10.0
                         ) {
                             // Skip if same trigger reason fired consecutively
                             if trigger.reason == last_trigger_reason
