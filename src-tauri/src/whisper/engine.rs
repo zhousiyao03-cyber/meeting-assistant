@@ -61,20 +61,28 @@ impl SherpaEngine {
             .ok_or_else(|| anyhow!("Failed to create SenseVoice recognizer — check model files"))?;
 
         eprintln!("[sherpa] SenseVoice + Silero VAD loaded from {:?}", model_dir);
-        Ok(Self { recognizer, vad })
+        Ok(Self { recognizer, vad, remainder: RefCell::new(Vec::with_capacity(512)) })
     }
 
     /// Feed audio samples (16kHz mono f32) to the VAD, then recognize any
     /// complete speech segments. Returns zero or more transcribed text strings.
     pub fn process_audio(&self, audio: &[f32]) -> Vec<String> {
         let mut results = Vec::new();
+        let mut remainder = self.remainder.borrow_mut();
+
+        // Prepend leftover samples from last call
+        remainder.extend_from_slice(audio);
 
         // Feed VAD in 512-sample windows
-        for chunk in audio.chunks(512) {
-            if chunk.len() == 512 {
-                self.vad.accept_waveform(chunk);
-            }
+        let full_windows = remainder.len() / 512;
+        for i in 0..full_windows {
+            let start = i * 512;
+            self.vad.accept_waveform(&remainder[start..start + 512]);
         }
+
+        // Keep the remainder for next call
+        let consumed = full_windows * 512;
+        *remainder = remainder[consumed..].to_vec();
 
         // Recognize each complete speech segment
         while !self.vad.is_empty() {
@@ -92,6 +100,16 @@ impl SherpaEngine {
 
     /// Flush any remaining speech buffered in the VAD (call when recording stops).
     pub fn flush(&self) -> Vec<String> {
+        // Feed any remaining samples before flushing
+        {
+            let mut remainder = self.remainder.borrow_mut();
+            if remainder.len() >= 256 {
+                let mut padded = remainder.drain(..).collect::<Vec<_>>();
+                padded.resize(512, 0.0);
+                self.vad.accept_waveform(&padded);
+            }
+            remainder.clear();
+        }
         self.vad.flush();
         let mut results = Vec::new();
         while !self.vad.is_empty() {
