@@ -31,7 +31,7 @@ export function useTauriEvents() {
         setSummary(s);
       });
       const u3 = await onSpeakingAdvice((advice) => {
-        setAdvices((prev) => [advice, ...prev]);
+        setAdvices((prev) => [advice, ...prev].slice(0, 10));
       });
       unlisteners.current = [u1, u2, u3];
     };

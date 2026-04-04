@@ -3,21 +3,20 @@ import { ControlBar } from "./ControlBar";
 import { TranscriptMini } from "./TranscriptMini";
 import { SummaryPanel } from "./SummaryPanel";
 import { AdvicePanel } from "./AdvicePanel";
-import { useTauriEvents } from "../../hooks/useTauriEvents";
-import { useRecording } from "../../hooks/useRecording";
 import { getConfig, loadReferenceDoc } from "../../lib/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
-
 interface NarrowViewProps {
   onSettings: () => void;
   onFullView: () => void;
+  events: ReturnType<typeof import("../../hooks/useTauriEvents").useTauriEvents>;
+  recording: ReturnType<typeof import("../../hooks/useRecording").useRecording>;
 }
 
-export function NarrowView({ onSettings, onFullView }: NarrowViewProps) {
-  const { transcripts, summary, advices } = useTauriEvents();
-  const recording = useRecording();
+export function NarrowView({ onSettings, onFullView, events, recording }: NarrowViewProps) {
+  const { transcripts, summary, advices } = events;
   const [micDevice, setMicDevice] = useState("");
   const [captureDevice, setCaptureDevice] = useState("");
+  const [activeTemplateName] = useState("项目同步会");
 
   useEffect(() => {
     getConfig()
@@ -54,13 +53,13 @@ export function NarrowView({ onSettings, onFullView }: NarrowViewProps) {
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-primary)]">
       <ControlBar
-        templateName="技术评审会"
+        templateName={activeTemplateName}
         formattedTime={recording.formattedTime}
         status={recording.status}
         onStart={handleStart}
         onPause={recording.pause}
         onResume={recording.resume}
-        onStop={() => recording.stop(summary, advices)}
+        onStop={() => recording.stop(summary, advices, activeTemplateName)}
         onSettings={onSettings}
         onDocuments={handleDocuments}
         onFullView={onFullView}
