@@ -23,6 +23,14 @@ pub struct MeetingSummary {
     pub current_topic: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct MeetingMinutes {
+    pub title: String,
+    pub key_points: Vec<String>,
+    pub action_items: Vec<String>,
+    pub decisions: Vec<String>,
+}
+
 pub struct AdvisorEngine {
     client: reqwest::Client,
     base_url: String,
@@ -109,6 +117,39 @@ impl AdvisorEngine {
 
         let response = self.chat(&messages, 500).await?;
         Ok(parse_summary(&response))
+    }
+
+    /// Generate structured meeting minutes from full transcript and summary.
+    pub async fn generate_minutes(&self, transcript: &str, summary: &str) -> Result<MeetingMinutes> {
+        let system = "你是会议纪要专家。根据会议转录和实时摘要，生成结构化会议纪要。\n\n\
+            严格按以下格式输出，每项一行：\n\
+            标题：（10字以内的会议主题）\n\
+            要点：\n- 要点1\n- 要点2\n\n\
+            行动项：\n- [负责人] 具体任务\n\n\
+            决策：\n- 决策1";
+
+        // Truncate transcript to last 8000 chars
+        let truncated = if transcript.len() > 8000 {
+            let start = transcript.len() - 8000;
+            let break_at = transcript[start..].find(|c: char| c.is_whitespace())
+                .map(|i| start + i).unwrap_or(start);
+            &transcript[break_at..]
+        } else {
+            transcript
+        };
+
+        let user_msg = format!(
+            "会议转录：\n{}\n\n实时摘要：\n{}\n\n请生成会议纪要。",
+            truncated, summary
+        );
+
+        let messages = vec![
+            LlmMessage { role: "system".into(), content: system.into() },
+            LlmMessage { role: "user".into(), content: user_msg },
+        ];
+
+        let response = self.chat(&messages, 800).await?;
+        Ok(parse_minutes(&response))
     }
 
     /// Generate speaking advice based on transcript, template, and trigger reason.
@@ -209,6 +250,44 @@ fn parse_advice(text: &str, trigger_reason: &str, offset_secs: f64) -> SpeakingA
         angle,
         timestamp: offset_secs,
     }
+}
+
+fn parse_minutes(text: &str) -> MeetingMinutes {
+    let mut title = String::new();
+    let mut key_points = Vec::new();
+    let mut action_items = Vec::new();
+    let mut decisions = Vec::new();
+    let mut current_section = "";
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() { continue; }
+
+        if let Some(val) = extract_field(trimmed, "标题") {
+            title = val;
+            current_section = "";
+        } else if trimmed.starts_with("要点") {
+            current_section = "points";
+        } else if trimmed.starts_with("行动项") || trimmed.starts_with("待办") {
+            current_section = "actions";
+        } else if trimmed.starts_with("决策") {
+            current_section = "decisions";
+        } else if trimmed.starts_with("- ") || trimmed.starts_with("• ") {
+            let item = trimmed.trim_start_matches("- ").trim_start_matches("• ").to_string();
+            match current_section {
+                "points" => key_points.push(item),
+                "actions" => action_items.push(item),
+                "decisions" => decisions.push(item),
+                _ => key_points.push(item),
+            }
+        }
+    }
+
+    if title.is_empty() {
+        title = "会议纪要".into();
+    }
+
+    MeetingMinutes { title, key_points, action_items, decisions }
 }
 
 /// Extract the value after a "key：value" or "key: value" pattern.

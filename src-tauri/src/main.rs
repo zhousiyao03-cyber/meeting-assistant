@@ -45,6 +45,8 @@ fn main() {
             commands::resume_recording,
             commands::save_meeting,
             commands::list_meetings,
+            commands::generate_meeting_minutes,
+            commands::delete_meeting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

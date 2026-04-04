@@ -476,6 +476,29 @@ pub fn list_meetings() -> Result<Vec<MeetingRecord>, String> {
     history::list_meetings().map_err(|e| e.to_string())
 }
 
+// --- Meeting Minutes ---
+
+#[command]
+pub async fn generate_meeting_minutes(
+    transcript: String,
+    summary: String,
+) -> Result<crate::advisor::engine::MeetingMinutes, String> {
+    let config = config::load_config().map_err(|e| e.to_string())?;
+    let advisor = crate::advisor::engine::AdvisorEngine::new(
+        &config.llm.base_url,
+        &config.llm.api_key,
+        &config.llm.model,
+    );
+    advisor.generate_minutes(&transcript, &summary)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn delete_meeting(id: String) -> Result<(), String> {
+    history::delete_meeting(&id).map_err(|e| e.to_string())
+}
+
 // --- Documents ---
 
 #[command]
