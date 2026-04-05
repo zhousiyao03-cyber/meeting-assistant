@@ -4,10 +4,14 @@ Real-time meeting assistant for macOS. Transcribes audio, generates meeting summ
 
 ![Tauri](https://img.shields.io/badge/Tauri-2.0-blue) ![React](https://img.shields.io/badge/React-19-blue) ![Rust](https://img.shields.io/badge/Rust-2021-orange)
 
+[English](#features) | [中文](#功能特性)
+
+---
+
 ## Features
 
-- **Real-time transcription** — SenseVoice model (via sherpa-onnx) + Silero VAD，本地实时转写，支持中/英/日/韩/粤语
-- **说话人识别** — 双通道独立转写：麦克风（我）和系统音频（对方）分别识别，自动标记说话人，内置回声抑制和跨通道去重
+- **Real-time transcription** — SenseVoice model (via sherpa-onnx) + Silero VAD, runs locally with support for Chinese, English, Japanese, Korean, and Cantonese
+- **Speaker diarization** — Dual-channel independent transcription: microphone ("me") and system audio ("other") are recognized separately with automatic speaker labeling, built-in echo suppression, and cross-channel deduplication
 - **Meeting summary** — LLM generates rolling summaries of key discussion points every 30 seconds
 - **Speaking suggestions** — AI detects when it's a good time to speak (questions, pauses, keyword triggers) and suggests what to say
 - **Dual audio capture** — Records both your microphone and system audio (remote participants via BlackHole)
@@ -15,7 +19,7 @@ Real-time meeting assistant for macOS. Transcribes audio, generates meeting summ
 - **Reference documents** — Load meeting agendas or docs for context-aware suggestions
 - **Meeting history** — Auto-saves transcripts, summaries, and action items to local SQLite database, with Markdown export
 - **Meeting minutes** — LLM auto-generates meeting title, key points, and action items on meeting end
-- **Privacy first** — ASR runs 100% locally, no audio leaves your machine. Only text is sent to the LLM API.
+- **Privacy first** — ASR runs 100% locally, no audio leaves your machine. Only text is sent to the LLM API
 
 ## Screenshots
 
@@ -55,7 +59,7 @@ On first launch:
 1. The app will prompt you to download the SenseVoice model (~200MB) + Silero VAD
 2. Configure your audio devices in Settings (mic + BlackHole)
 3. Set your LLM API key in Settings
-4. Click **+ 新建会议** to start recording
+4. Click **+ New Meeting** to start recording
 
 ## Configuration
 
@@ -86,33 +90,33 @@ Templates define how the AI assists during different meeting types. Located in `
 
 | Template | Description | Trigger Examples |
 |----------|-------------|-----------------|
-| tech-review | Architecture & design reviews | "大家觉得怎么样", "这个方案" |
-| code-review | Code review discussions | "有没有问题", "还有其他意见吗" |
-| brainstorm | Brainstorming sessions | "谁有想法", "我们可以" |
-| project-sync | Project status meetings | "进度怎么样", "有什么blocker" |
+| tech-review | Architecture & design reviews | opinion requests, proposal mentions |
+| code-review | Code review discussions | review questions, feedback prompts |
+| brainstorm | Brainstorming sessions | idea solicitation, open suggestions |
+| project-sync | Project status meetings | progress checks, blocker mentions |
 
 Each template includes a `system_prompt` that shapes the AI's advice style, and `trigger_hints` — keywords that, when detected in the transcript, prompt the AI to generate a speaking suggestion.
 
 ## Speech Recognition Architecture
 
-转写引擎采用 **sherpa-onnx** 框架，核心组件：
+The transcription engine is built on the **sherpa-onnx** framework with the following core components:
 
 | Component | Model | Description |
 |-----------|-------|-------------|
-| ASR | **SenseVoice** (int8 quantized) | 阿里达摩院开源的多语言 ASR 模型，支持中/英/日/韩/粤语，int8 量化后约 200MB |
-| VAD | **Silero VAD** | 轻量级语音活动检测，512 采样窗口，自动分割语音段落 |
-| Runtime | **ONNX Runtime** (via sherpa-onnx) | 跨平台推理引擎，CPU 运行，无需 GPU |
+| ASR | **SenseVoice** (int8 quantized) | Multilingual ASR model from Alibaba DAMO Academy, supports zh/en/ja/ko/yue, ~200MB after int8 quantization |
+| VAD | **Silero VAD** | Lightweight voice activity detection with 512-sample windows for automatic speech segmentation |
+| Runtime | **ONNX Runtime** (via sherpa-onnx) | Cross-platform inference engine, CPU-only, no GPU required |
 
-### 工作原理
+### How It Works
 
-1. **双通道采集** — 麦克风和系统音频（BlackHole）分别采集为 16kHz mono f32 PCM 流
-2. **独立 VAD + ASR** — 每个通道有独立的 Silero VAD + SenseVoice 引擎实例，互不干扰
-3. **语音段落检测** — Silero VAD 以 512 采样（32ms）为窗口检测语音活动，当检测到 ≥250ms 语音后开始积累，≥250ms 静音后切段
-4. **离线识别** — 切出的语音段送入 SenseVoice 进行离线识别（非流式），每段最长 8 秒
-5. **回声抑制** — 当系统音频通道活跃时，自动抑制麦克风通道的识别结果（消除扬声器漏入麦克风的回声）
-6. **跨通道去重** — 3 秒内两通道产出相似度 >50% 的文本时，自动过滤重复条目
+1. **Dual-channel capture** — Microphone and system audio (BlackHole) are captured separately as 16kHz mono f32 PCM streams
+2. **Independent VAD + ASR** — Each channel has its own Silero VAD + SenseVoice engine instance, fully isolated
+3. **Speech segmentation** — Silero VAD uses 512-sample (32ms) windows to detect voice activity; accumulates after ≥250ms of speech, segments after ≥250ms of silence
+4. **Offline recognition** — Segmented speech is fed to SenseVoice for offline (non-streaming) recognition, max 8 seconds per segment
+5. **Echo suppression** — When the system audio channel is active, microphone channel results are suppressed (eliminates speaker-to-mic leakage)
+6. **Cross-channel dedup** — When both channels produce text with >50% similarity within a 3-second window, the duplicate is automatically filtered
 
-模型文件存储在 `~/.meeting-assistant/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/`，首次启动时自动下载。
+Models are stored in `~/.meeting-assistant/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/` and downloaded automatically on first launch.
 
 ## Tech Stack
 
@@ -157,13 +161,14 @@ meeting-assistant/
 │   │   ├── narrow/               # Compact panel view
 │   │   ├── full/                 # Expanded view
 │   │   ├── settings/             # Settings tabs
+│   │   ├── history/              # Meeting history view
 │   │   └── shared/               # Reusable components
 │   ├── hooks/                    # useRecording, useTauriEvents
 │   └── lib/                      # Tauri API wrapper, types
 ├── src-tauri/                    # Rust backend
 │   ├── src/
 │   │   ├── audio/                # Audio capture & buffering
-│   │   ├── whisper/              # Speech-to-text engine
+│   │   ├── whisper/              # ASR engine (SenseVoice + VAD)
 │   │   ├── advisor/              # LLM integration & triggers
 │   │   ├── transcript/           # Transcript storage
 │   │   ├── storage/              # Config & history persistence
@@ -182,6 +187,21 @@ All data stays on your machine:
 | App config | `~/.meeting-assistant/config.json` |
 | ASR models | `~/.meeting-assistant/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/` |
 | Meeting history | `~/.meeting-assistant/history.db` |
+
+---
+
+## 功能特性
+
+- **实时转写** — SenseVoice 模型（via sherpa-onnx）+ Silero VAD，本地运行，支持中/英/日/韩/粤语
+- **说话人识别** — 双通道独立转写：麦克风（我）和系统音频（对方）分别识别，自动标记说话人，内置回声抑制和跨通道去重
+- **会议摘要** — LLM 每 30 秒自动生成讨论要点滚动摘要
+- **发言建议** — AI 检测适合发言的时机（提问、停顿、关键词触发），并建议说什么
+- **双通道音频采集** — 同时录制麦克风和系统音频（通过 BlackHole 采集远端参会者声音）
+- **会议模板** — 内置技术评审、代码评审、头脑风暴、项目同步等场景模板，支持完整 UI 编辑器
+- **参考文档** — 加载会议议程或文档，为 AI 提供上下文感知建议
+- **会议历史** — 自动保存转写、摘要和行动项到本地 SQLite 数据库，支持 Markdown 导出
+- **会议纪要** — 会议结束时 LLM 自动生成会议标题、要点和行动项
+- **隐私优先** — ASR 100% 本地运行，音频不离开你的设备。仅文本发送至 LLM API
 
 ## License
 
