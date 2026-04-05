@@ -40,10 +40,17 @@ export function TranscriptMini({ transcripts }: TranscriptMiniProps) {
       </h2>
       {transcripts.length > 0 ? (
         <div className="space-y-1.5">
-          {transcripts.slice(-10).map((seg) => (
-            <div key={seg.offset_secs} className="flex gap-2 text-xs">
+          {transcripts.slice(-10).map((seg, i) => (
+            <div key={`${seg.offset_secs}-${i}`} className="flex gap-2 text-xs">
               <span className="text-[var(--text-muted)] shrink-0 font-mono">
                 {formatOffset(seg.offset_secs)}
+              </span>
+              <span className={`shrink-0 px-1 rounded text-[10px] ${
+                seg.speaker === "me"
+                  ? "bg-[var(--accent-purple)]/20 text-[var(--accent-purple)]"
+                  : "bg-[var(--accent-orange)]/20 text-[var(--accent-orange)]"
+              }`}>
+                {seg.speaker === "me" ? "我" : "对方"}
               </span>
               <span className="text-[var(--text-primary)]">{seg.text}</span>
             </div>

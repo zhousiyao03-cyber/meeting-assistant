@@ -125,6 +125,7 @@ impl SherpaEngine {
     }
 
     /// Reset the VAD state (e.g., when resuming after pause).
+    #[allow(dead_code)]
     pub fn reset(&self) {
         self.vad.reset();
     }

@@ -14,6 +14,17 @@ use crate::whisper::engine::SherpaEngine;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
+/// Simple character-level similarity (Jaccard on chars) for cross-channel dedup.
+fn text_similarity(a: &str, b: &str) -> f64 {
+    if a.is_empty() || b.is_empty() { return 0.0; }
+    let chars_a: std::collections::HashSet<char> = a.chars().collect();
+    let chars_b: std::collections::HashSet<char> = b.chars().collect();
+    let intersection = chars_a.intersection(&chars_b).count();
+    let union = chars_a.union(&chars_b).count();
+    if union == 0 { return 0.0; }
+    intersection as f64 / union as f64
+}
+
 // --- Audio ---
 
 #[derive(Serialize)]
@@ -194,10 +205,10 @@ pub async fn start_recording(
                 return;
             }
         };
-        let engine = match SherpaEngine::new(&model_dir) {
+        let mic_engine = match SherpaEngine::new(&model_dir) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("[sherpa] Failed to load: {}", e);
+                eprintln!("[sherpa] Failed to load mic engine: {}", e);
                 let _ = win.emit("backend-error", serde_json::json!({
                     "source": "asr",
                     "message": format!("语音模型加载失败: {}", e)
@@ -205,12 +216,66 @@ pub async fn start_recording(
                 return;
             }
         };
-        eprintln!("[sherpa] Engine loaded, starting transcription loop");
+        let capture_engine = match SherpaEngine::new(&model_dir) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("[sherpa] Failed to load capture engine: {}", e);
+                let _ = win.emit("backend-error", serde_json::json!({
+                    "source": "asr",
+                    "message": format!("语音模型加载失败(capture): {}", e)
+                }));
+                return;
+            }
+        };
+        eprintln!("[sherpa] Dual engines loaded (mic + capture), starting transcription loop");
+
+        // Track when each channel last had active audio (RMS above threshold)
+        let mut capture_last_active: f64 = 0.0;
+        let mut mic_last_active: f64 = 0.0;
+        const ECHO_SUPPRESS_WINDOW: f64 = 1.5; // seconds
+        const ACTIVE_RMS_THRESHOLD: f32 = 0.005;
+
+        // Recent segments for cross-channel dedup
+        let mut recent_segments: Vec<(String, f64, String)> = Vec::new();
+
+        let emit_segment = |text: &str, offset: f64, speaker: &str,
+                            recent: &mut Vec<(String, f64, String)>| {
+            // Dedup: if the other channel produced a similar text within 3 seconds, skip
+            let dominated = recent.iter().any(|(prev_text, prev_offset, prev_speaker)| {
+                prev_speaker != speaker
+                    && (offset - prev_offset).abs() < 3.0
+                    && text_similarity(text, prev_text) > 0.5
+            });
+            if dominated {
+                eprintln!("[sherpa] Dedup: skipping '{}' from {} (duplicate of other channel)", text, speaker);
+                return;
+            }
+            recent.push((text.to_string(), offset, speaker.to_string()));
+            if recent.len() > 20 { recent.drain(..recent.len() - 20); }
+
+            {
+                let mut store = transcript_for_whisper.lock().unwrap();
+                store.add(text.to_string(), offset, speaker);
+            }
+            let segment = TranscriptSegment {
+                timestamp: chrono::Utc::now(),
+                text: text.to_string(),
+                offset_secs: offset,
+                speaker: speaker.to_string(),
+            };
+            let _ = win.emit("new-transcript", &segment);
+        };
+
+        /// Compute RMS energy of audio samples
+        fn rms_energy(samples: &[f32]) -> f32 {
+            if samples.is_empty() { return 0.0; }
+            let sum: f32 = samples.iter().map(|s| s * s).sum();
+            (sum / samples.len() as f32).sqrt()
+        }
 
         loop {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-            // Check if paused or stopped
             let is_recording;
             let is_paused;
             {
@@ -220,73 +285,67 @@ pub async fn start_recording(
             }
 
             if !is_recording {
-                // Flush remaining audio on stop
-                let remaining = engine.flush();
-                for text in remaining {
-                    let offset = start_time.elapsed().as_secs_f64();
-                    {
-                        let mut store = transcript_for_whisper.lock().unwrap();
-                        store.add(text.clone(), offset);
-                    }
-                    let segment = TranscriptSegment {
-                        timestamp: chrono::Utc::now(),
-                        text,
-                        offset_secs: offset,
-                    };
-                    let _ = win.emit("new-transcript", &segment);
+                let offset = start_time.elapsed().as_secs_f64();
+                for text in mic_engine.flush() {
+                    emit_segment(&text, offset, "me", &mut recent_segments);
+                }
+                for text in capture_engine.flush() {
+                    emit_segment(&text, offset, "other", &mut recent_segments);
                 }
                 break;
             }
 
             if is_paused { continue; }
 
-            // Drain available audio, matching lengths to avoid data loss
-            let mic_len = {
-                let buf = mic_buffer.lock().unwrap();
-                buf.len()
-            };
-            let cap_len = {
-                let buf = capture_buffer.lock().unwrap();
-                buf.len()
-            };
+            let now = start_time.elapsed().as_secs_f64();
 
-            if mic_len == 0 && cap_len == 0 { continue; }
-
-            let audio_data = if mic_len > 0 && cap_len > 0 {
-                let take = mic_len.min(cap_len);
-                let mic_samples = {
-                    let mut buf = mic_buffer.lock().unwrap();
-                    buf.drain_up_to(take)
-                };
-                let capture_samples = {
-                    let mut buf = capture_buffer.lock().unwrap();
-                    buf.drain_up_to(take)
-                };
-                mic_samples.iter().zip(&capture_samples)
-                    .map(|(m, c)| (m + c) * 0.5)
-                    .collect::<Vec<f32>>()
-            } else if mic_len > 0 {
+            // Drain mic audio
+            let mic_data = {
                 let mut buf = mic_buffer.lock().unwrap();
-                buf.drain_all()
-            } else {
-                let mut buf = capture_buffer.lock().unwrap();
-                buf.drain_all()
+                if buf.len() > 0 { buf.drain_all() } else { vec![] }
             };
 
-            // Feed to VAD + recognize
-            let texts = engine.process_audio(&audio_data);
-            let offset = start_time.elapsed().as_secs_f64();
-            for text in texts {
-                {
-                    let mut store = transcript_for_whisper.lock().unwrap();
-                    store.add(text.clone(), offset);
+            // Drain capture audio
+            let cap_data = {
+                let mut buf = capture_buffer.lock().unwrap();
+                if buf.len() > 0 { buf.drain_all() } else { vec![] }
+            };
+
+            // Track channel activity
+            if !cap_data.is_empty() && rms_energy(&cap_data) > ACTIVE_RMS_THRESHOLD {
+                capture_last_active = now;
+            }
+            if !mic_data.is_empty() && rms_energy(&mic_data) > ACTIVE_RMS_THRESHOLD {
+                mic_last_active = now;
+            }
+
+            // Process capture audio ("other") — always process
+            if !cap_data.is_empty() {
+                for text in capture_engine.process_audio(&cap_data) {
+                    emit_segment(&text, now, "other", &mut recent_segments);
                 }
-                let segment = TranscriptSegment {
-                    timestamp: chrono::Utc::now(),
-                    text,
-                    offset_secs: offset,
-                };
-                let _ = win.emit("new-transcript", &segment);
+            }
+
+            // Process mic audio ("me") — suppress if capture channel was recently active
+            // (likely echo from speaker being picked up by mic)
+            if !mic_data.is_empty() {
+                let capture_was_active = (now - capture_last_active) < ECHO_SUPPRESS_WINDOW;
+                let mic_is_active = (now - mic_last_active) < 0.5;
+
+                // Feed audio to engine regardless (keeps VAD state consistent)
+                let texts = mic_engine.process_audio(&mic_data);
+
+                if capture_was_active && mic_is_active {
+                    // Both active: likely echo. Only emit if mic energy is significantly
+                    // higher than capture (user actually talking over the speaker)
+                    for text in texts {
+                        eprintln!("[sherpa] Echo suppress: dropping mic '{}' (capture was active)", text);
+                    }
+                } else {
+                    for text in texts {
+                        emit_segment(&text, now, "me", &mut recent_segments);
+                    }
+                }
             }
         }
     });

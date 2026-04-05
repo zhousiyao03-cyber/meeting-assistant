@@ -8,6 +8,8 @@ pub struct TranscriptSegment {
     pub text: String,
     /// Seconds since recording started
     pub offset_secs: f64,
+    /// "me" for mic input, "other" for system audio
+    pub speaker: String,
 }
 
 pub struct TranscriptStore {
@@ -21,7 +23,7 @@ impl TranscriptStore {
         }
     }
 
-    pub fn add(&mut self, text: String, offset_secs: f64) {
+    pub fn add(&mut self, text: String, offset_secs: f64, speaker: &str) {
         if text.is_empty() {
             return;
         }
@@ -29,6 +31,7 @@ impl TranscriptStore {
             timestamp: Utc::now(),
             text,
             offset_secs,
+            speaker: speaker.to_string(),
         });
     }
 
@@ -79,10 +82,10 @@ mod tests {
     #[test]
     fn test_recent_text() {
         let mut store = TranscriptStore::new();
-        store.add("hello".into(), 0.0);
-        store.add("world".into(), 5.0);
-        store.add("foo".into(), 10.0);
-        store.add("bar".into(), 35.0);
+        store.add("hello".into(), 0.0, "me");
+        store.add("world".into(), 5.0, "other");
+        store.add("foo".into(), 10.0, "me");
+        store.add("bar".into(), 35.0, "other");
 
         let recent = store.recent_text(30.0);
         assert!(recent.contains("world"));

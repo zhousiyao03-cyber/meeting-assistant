@@ -51,6 +51,7 @@ fn extract_pdf_text(_bytes: &[u8]) -> Option<String> {
 }
 
 /// Chunk a document into paragraphs for context window management.
+#[allow(dead_code)]
 pub fn chunk_document(content: &str, max_chunk_chars: usize) -> Vec<String> {
     let paragraphs: Vec<&str> = content.split("\n\n").collect();
     let mut chunks = Vec::new();
@@ -73,6 +74,7 @@ pub fn chunk_document(content: &str, max_chunk_chars: usize) -> Vec<String> {
 }
 
 /// Select the most relevant chunk based on keyword overlap with the transcript.
+#[allow(dead_code)]
 pub fn select_relevant_chunk(chunks: &[String], transcript: &str) -> String {
     if chunks.is_empty() {
         return String::new();

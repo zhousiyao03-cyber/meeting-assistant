@@ -3,17 +3,19 @@ import type { MeetingTemplate, LoadedDocument } from "../../lib/types";
 import { getTemplates, setActiveTemplate } from "../../lib/tauri";
 
 interface SidebarProps {
-  onStop: () => void;
+  onNarrowView: () => void;
   onSettings: () => void;
   documents: LoadedDocument[];
   onAddDocument: () => void;
+  recording: ReturnType<typeof import("../../hooks/useRecording").useRecording>;
 }
 
 export function Sidebar({
-  onStop,
+  onNarrowView,
   onSettings,
   documents,
   onAddDocument,
+  recording,
 }: SidebarProps) {
   const [templates, setTemplates] = useState<MeetingTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
@@ -77,17 +79,23 @@ export function Sidebar({
       </div>
 
       <div className="p-4 border-t border-[var(--border)] space-y-2">
+        {recording.status === "recording" && (
+          <div className="flex items-center gap-2 px-3 py-1.5 text-sm">
+            <span className="w-2 h-2 rounded-full bg-[var(--accent-red)] animate-pulse" />
+            <span className="font-mono text-[var(--text-muted)]">{recording.formattedTime}</span>
+          </div>
+        )}
         <button
-          onClick={onStop}
-          className="w-full py-2 rounded bg-[var(--accent-red)]/20 text-[var(--accent-red)] text-sm hover:bg-[var(--accent-red)]/30"
+          onClick={onNarrowView}
+          className="w-full py-2 rounded bg-[var(--bg-card)] text-[var(--text-secondary)] text-sm hover:bg-[var(--bg-card-hover)]"
         >
-          ⏹ Stop Recording
+          ◧ 收起窄屏
         </button>
         <button
           onClick={onSettings}
           className="w-full py-2 rounded bg-[var(--bg-card)] text-[var(--text-secondary)] text-sm hover:bg-[var(--bg-card-hover)]"
         >
-          Settings
+          ⚙ 设置
         </button>
       </div>
     </div>

@@ -40,10 +40,17 @@ export function TranscriptPanel({ transcripts }: TranscriptPanelProps) {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto p-4 space-y-3"
       >
-        {transcripts.map((seg) => (
-          <div key={seg.offset_secs} className="flex gap-3">
+        {transcripts.map((seg, i) => (
+          <div key={`${seg.offset_secs}-${i}`} className="flex gap-3">
             <span className="text-xs text-[var(--text-muted)] shrink-0 pt-0.5 font-mono">
               {formatOffset(seg.offset_secs)}
+            </span>
+            <span className={`shrink-0 pt-0.5 px-1.5 rounded text-xs ${
+              seg.speaker === "me"
+                ? "bg-[var(--accent-purple)]/20 text-[var(--accent-purple)]"
+                : "bg-[var(--accent-orange)]/20 text-[var(--accent-orange)]"
+            }`}>
+              {seg.speaker === "me" ? "我" : "对方"}
             </span>
             <p className="text-sm text-[var(--text-primary)] leading-relaxed">
               {seg.text}

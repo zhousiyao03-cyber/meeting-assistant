@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 /// Consumers drain chunks of `chunk_size` samples (e.g., 5s = 80000 samples).
 pub struct AudioBuffer {
     data: Vec<f32>,
+    #[allow(dead_code)]
     chunk_size: usize,
 }
 
@@ -22,6 +23,7 @@ impl AudioBuffer {
     }
 
     /// Drain a full chunk if available. Returns None if not enough data yet.
+    #[allow(dead_code)]
     pub fn drain_chunk(&mut self) -> Option<Vec<f32>> {
         if self.data.len() >= self.chunk_size {
             let chunk: Vec<f32> = self.data.drain(..self.chunk_size).collect();
@@ -37,6 +39,7 @@ impl AudioBuffer {
     }
 
     /// Drain up to `n` samples. Returns whatever is available up to that limit.
+    #[allow(dead_code)]
     pub fn drain_up_to(&mut self, n: usize) -> Vec<f32> {
         let take = n.min(self.data.len());
         self.data.drain(..take).collect()

@@ -64,11 +64,12 @@ export function useRecording() {
   ): Promise<string | undefined> => {
     const currentElapsed = elapsedRef.current;
     await stopRecording();
-    setStatus("idle");
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    setStatus("idle");
+    setElapsed(0);
 
     // Auto-save meeting history with generated minutes
     try {

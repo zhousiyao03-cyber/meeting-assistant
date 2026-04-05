@@ -7,6 +7,7 @@ export interface TranscriptSegment {
   timestamp: string;
   text: string;
   offset_secs: number;
+  speaker: "me" | "other";
 }
 
 export interface MeetingSummary {
