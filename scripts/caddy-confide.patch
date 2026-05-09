@@ -1,0 +1,33 @@
+# Confide Caddy configuration patch — append to /etc/caddy/Caddyfile on knosi server
+#
+# Usage on knosi:
+#   ssh knosi "cat >> /etc/caddy/Caddyfile" < scripts/caddy-confide.patch
+#   ssh knosi "caddy reload --config /etc/caddy/Caddyfile"
+#
+# After Cloudflare Workers is deployed (Week 4), update api.confide.knosi.xyz
+# block to either remove (CF handles via custom_domain route) or proxy to a
+# specific port if running self-hosted Workers.
+
+confide.knosi.xyz {
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+	}
+
+	# Week 0 placeholder — Week 6 replaces this with file_server pointing to /srv/confide-landing
+	respond "Confide — coming soon" 200
+}
+
+api.confide.knosi.xyz {
+	encode gzip zstd
+
+	# Week 0-3 placeholder. Week 4 deploys CF Workers with custom_domain route
+	# pattern that bypasses this Caddy block entirely (Cloudflare-handled).
+	# If you ever want to self-host Workers (workerd) on knosi, replace with:
+	#   reverse_proxy 127.0.0.1:8787
+	respond "API not deployed yet" 503
+}

@@ -1,29 +1,21 @@
 use serde::Serialize;
 use tauri::command;
 use tauri::Emitter;
+use tauri::Manager;
 
+use crate::advisor::templates::{self, MeetingTemplate};
+use crate::asr::{create_asr_provider, AsrConfig, TranscriptChunk, TranscriptCallback};
 use crate::audio::buffer::{create_shared_buffer, SharedBuffer};
 use crate::audio::capture;
-use crate::advisor::templates::{self, MeetingTemplate};
+use crate::audio::permission;
+use crate::audio::system_capture::{create_system_audio_capture, AppFilter};
 use crate::documents::loader::{self, LoadedDocument};
+use crate::license::{self, UserPlan};
 use crate::storage::config::{self, AppConfig};
 use crate::storage::history::{self, MeetingRecord};
 use crate::transcript::store::{create_shared_store, SharedTranscriptStore, TranscriptSegment};
-use crate::whisper::downloader;
-use crate::whisper::engine::SherpaEngine;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
-
-/// Simple character-level similarity (Jaccard on chars) for cross-channel dedup.
-fn text_similarity(a: &str, b: &str) -> f64 {
-    if a.is_empty() || b.is_empty() { return 0.0; }
-    let chars_a: std::collections::HashSet<char> = a.chars().collect();
-    let chars_b: std::collections::HashSet<char> = b.chars().collect();
-    let intersection = chars_a.intersection(&chars_b).count();
-    let union = chars_a.union(&chars_b).count();
-    if union == 0 { return 0.0; }
-    intersection as f64 / union as f64
-}
 
 // --- Audio ---
 
@@ -47,10 +39,10 @@ pub fn list_audio_devices() -> Result<Vec<AudioDevice>, String> {
 
 #[command]
 pub fn greet(name: &str) -> String {
-    format!("Hello, {}! Meeting Assistant is running.", name)
+    format!("Hello, {}! VoiceNote is running.", name)
 }
 
-// --- Whisper ---
+// --- Whisper (legacy local model — kept for v1.1 fallback) ---
 
 #[derive(Serialize)]
 pub struct ModelStatus {
@@ -60,7 +52,7 @@ pub struct ModelStatus {
 
 #[command]
 pub fn check_whisper_model() -> Result<ModelStatus, String> {
-    let path = downloader::model_path().map_err(|e| e.to_string())?;
+    let path = crate::whisper::downloader::model_path().map_err(|e| e.to_string())?;
     Ok(ModelStatus {
         downloaded: path.is_some(),
         path: path.map(|p| p.to_string_lossy().to_string()),
@@ -69,16 +61,41 @@ pub fn check_whisper_model() -> Result<ModelStatus, String> {
 
 #[command]
 pub async fn download_whisper_model(window: tauri::Window) -> Result<String, String> {
-    let path = downloader::download_model(move |downloaded, total| {
-        let _ = window.emit("model-download-progress", serde_json::json!({
-            "downloaded": downloaded,
-            "total": total,
-        }));
+    let path = crate::whisper::downloader::download_model(move |downloaded, total| {
+        let _ = window.emit(
+            "model-download-progress",
+            serde_json::json!({ "downloaded": downloaded, "total": total }),
+        );
     })
     .await
     .map_err(|e| e.to_string())?;
-
     Ok(path.to_string_lossy().to_string())
+}
+
+// --- Permission ---
+
+#[derive(Serialize)]
+pub struct ScreenRecordingPermissionStatus {
+    pub status: String,
+    pub macos_version_ok: bool,
+}
+
+#[command]
+pub fn check_screen_recording_permission() -> Result<ScreenRecordingPermissionStatus, String> {
+    let status = match permission::check_screen_recording_permission() {
+        permission::PermissionStatus::Granted => "granted",
+        permission::PermissionStatus::Denied => "denied",
+        permission::PermissionStatus::NotDetermined => "not-determined",
+    };
+    Ok(ScreenRecordingPermissionStatus {
+        status: status.to_string(),
+        macos_version_ok: permission::macos_version_at_least(13, 0),
+    })
+}
+
+#[command]
+pub fn open_screen_recording_settings() -> Result<(), String> {
+    permission::open_settings_screen_recording().map_err(|e| e.to_string())
 }
 
 // --- Recording Pipeline ---
@@ -92,6 +109,8 @@ pub struct RecordingState {
     pub start_time: Option<std::time::Instant>,
     pub reference_docs: String,
     pub active_template_id: Option<String>,
+    pub context_note: String,
+    pub active_locale: String,
 }
 
 impl RecordingState {
@@ -105,6 +124,8 @@ impl RecordingState {
             start_time: None,
             reference_docs: String::new(),
             active_template_id: None,
+            context_note: String::new(),
+            active_locale: "en-US".into(),
         }
     }
 }
@@ -114,16 +135,26 @@ pub type SharedRecordingState = Arc<TokioMutex<RecordingState>>;
 #[command]
 pub async fn start_recording(
     mic_device: String,
-    capture_device: String,
     state: tauri::State<'_, SharedRecordingState>,
     window: tauri::Window,
 ) -> Result<(), String> {
+    if !permission::macos_version_at_least(13, 0) {
+        return Err("Confide requires macOS 13.0 or later.".into());
+    }
+    if matches!(
+        permission::check_screen_recording_permission(),
+        permission::PermissionStatus::Denied | permission::PermissionStatus::NotDetermined
+    ) {
+        return Err(
+            "Screen Recording permission required. Open System Settings → Privacy & Security → Screen Recording, enable VoiceNote, and restart the app.".into(),
+        );
+    }
+
     let mut rec = state.lock().await;
     if rec.is_recording {
         return Err("Already recording".into());
     }
 
-    // Reset state from previous recording
     {
         let mut mic_buf = rec.mic_buffer.lock().unwrap();
         mic_buf.drain_all();
@@ -144,241 +175,319 @@ pub async fn start_recording(
     let mic_buffer = rec.mic_buffer.clone();
     let capture_buffer = rec.capture_buffer.clone();
     let transcript = rec.transcript.clone();
+    let start_time = rec.start_time.unwrap();
+    let active_locale = rec.active_locale.clone();
 
-    // Clone the Arc for spawned tasks
-    let state_for_whisper: SharedRecordingState = Arc::clone(&state);
-    let state_for_advisor: SharedRecordingState = Arc::clone(&state);
+    drop(rec);
 
-    // Start audio capture in a dedicated thread (cpal::Stream is !Send)
+    // === 1. Mic capture via cpal ===
+    let state_for_mic_thread = Arc::clone(&state);
     let mic_buf_for_thread = mic_buffer.clone();
-    let cap_buf_for_thread = capture_buffer.clone();
-    let state_for_streams: SharedRecordingState = Arc::clone(&state);
-    let win_for_error = window.clone();
+    let win_for_mic_err = window.clone();
     std::thread::spawn(move || {
         let mic_stream = match capture::start_capture(&mic_device, mic_buf_for_thread) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("[audio] Mic capture failed: {}", e);
-                let _ = win_for_error.emit("backend-error", serde_json::json!({
-                    "source": "audio",
-                    "message": format!("麦克风启动失败: {}", e)
-                }));
+                let _ = win_for_mic_err.emit(
+                    "backend-error",
+                    serde_json::json!({
+                        "source": "audio",
+                        "message": format!("Microphone start failed: {}", e)
+                    }),
+                );
                 return;
             }
         };
-        let capture_stream = match capture::start_capture(&capture_device, cap_buf_for_thread) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("[audio] System capture failed: {}", e);
-                let _ = win_for_error.emit("backend-error", serde_json::json!({
-                    "source": "audio",
-                    "message": format!("系统音频捕获失败: {}", e)
-                }));
-                return;
-            }
-        };
-        eprintln!("[audio] Streams started, holding alive...");
+        eprintln!("[audio] Mic stream started, holding alive...");
         loop {
             std::thread::sleep(std::time::Duration::from_millis(200));
-            if let Ok(rec) = state_for_streams.try_lock() {
-                if !rec.is_recording { break; }
+            if let Ok(rec) = state_for_mic_thread.try_lock() {
+                if !rec.is_recording {
+                    break;
+                }
             }
         }
         drop(mic_stream);
-        drop(capture_stream);
-        eprintln!("[audio] Streams dropped, capture stopped");
+        eprintln!("[audio] Mic stream dropped");
     });
 
-    // Spawn sherpa-onnx ASR processing (SenseVoice + Silero VAD)
-    let start_time = rec.start_time.unwrap();
-    let win = window.clone();
-    let transcript_for_whisper = transcript.clone();
+    // === 2. System audio capture via ScreenCaptureKit ===
+    let cap_buf_for_sckit = capture_buffer.clone();
+    let win_for_sckit = window.clone();
+    let state_for_sckit: SharedRecordingState = Arc::clone(&state);
     tokio::spawn(async move {
-        let model_dir = match crate::whisper::downloader::model_path() {
-            Ok(Some(p)) => p,
-            _ => {
-                eprintln!("[sherpa] Model not found");
-                let _ = win.emit("backend-error", serde_json::json!({
-                    "source": "asr",
-                    "message": "语音模型未下载，请先在设置中下载模型"
-                }));
-                return;
-            }
-        };
-        let mic_engine = match SherpaEngine::new(&model_dir) {
-            Ok(e) => e,
+        let mut sckit = match create_system_audio_capture(cap_buf_for_sckit, AppFilter::default())
+        {
+            Ok(b) => b,
             Err(e) => {
-                eprintln!("[sherpa] Failed to load mic engine: {}", e);
-                let _ = win.emit("backend-error", serde_json::json!({
-                    "source": "asr",
-                    "message": format!("语音模型加载失败: {}", e)
-                }));
+                let _ = win_for_sckit.emit(
+                    "backend-error",
+                    serde_json::json!({
+                        "source": "audio",
+                        "message": format!("System audio init failed: {}", e)
+                    }),
+                );
                 return;
             }
         };
-        let capture_engine = match SherpaEngine::new(&model_dir) {
-            Ok(e) => e,
+        if let Err(e) = sckit.start() {
+            let _ = win_for_sckit.emit(
+                "backend-error",
+                serde_json::json!({
+                    "source": "audio",
+                    "message": format!("System audio start failed: {}", e)
+                }),
+            );
+            return;
+        }
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            let rec = state_for_sckit.lock().await;
+            if !rec.is_recording {
+                break;
+            }
+        }
+        let _ = sckit.stop();
+        eprintln!("[audio] System audio capture stopped");
+    });
+
+    // === 3. ASR loop: GPT-Realtime-Whisper ===
+    let asr_config = {
+        let cfg = config::load_config().unwrap_or_default();
+        AsrConfig {
+            provider: "openai-realtime-whisper".into(),
+            openai_api_key: if cfg.openai_asr_api_key.is_empty() {
+                std::env::var("OPENAI_API_KEY").unwrap_or_default()
+            } else {
+                cfg.openai_asr_api_key
+            },
+            openai_model: cfg.openai_asr_model,
+            language_hint: cfg.language_preference,
+        }
+    };
+    let win_for_asr_outer = window.clone();
+    let win_for_asr_cb = window.clone();
+    let transcript_for_asr = transcript.clone();
+    let state_for_asr_loop: SharedRecordingState = Arc::clone(&state);
+    let mic_buf_for_asr = mic_buffer.clone();
+    let cap_buf_for_asr = capture_buffer.clone();
+    tokio::spawn(async move {
+        let on_transcript: TranscriptCallback = std::sync::Arc::new(move |chunk: TranscriptChunk| {
+            if chunk.is_final {
+                {
+                    let mut store = transcript_for_asr.lock().unwrap();
+                    store.add(chunk.text.clone(), chunk.offset_secs, &chunk.speaker);
+                }
+                let segment = TranscriptSegment {
+                    timestamp: chrono::Utc::now(),
+                    text: chunk.text.clone(),
+                    offset_secs: chunk.offset_secs,
+                    speaker: chunk.speaker.clone(),
+                };
+                let _ = win_for_asr_cb.emit("new-transcript", &segment);
+            } else {
+                let _ = win_for_asr_cb.emit("transcript-delta", &chunk);
+            }
+        });
+
+        let mut asr = match create_asr_provider(&asr_config, on_transcript) {
+            Ok(p) => p,
             Err(e) => {
-                eprintln!("[sherpa] Failed to load capture engine: {}", e);
-                let _ = win.emit("backend-error", serde_json::json!({
+                let _ = win_for_asr_outer.emit(
+                    "backend-error",
+                    serde_json::json!({
+                        "source": "asr",
+                        "message": format!("ASR init failed: {}", e)
+                    }),
+                );
+                return;
+            }
+        };
+        if let Err(e) = asr.start().await {
+            let _ = win_for_asr_outer.emit(
+                "backend-error",
+                serde_json::json!({
                     "source": "asr",
-                    "message": format!("语音模型加载失败(capture): {}", e)
-                }));
-                return;
-            }
-        };
-        eprintln!("[sherpa] Dual engines loaded (mic + capture), starting transcription loop");
-
-        // Track when each channel last had active audio (RMS above threshold)
-        let mut capture_last_active: f64 = 0.0;
-        let mut mic_last_active: f64 = 0.0;
-        const ECHO_SUPPRESS_WINDOW: f64 = 1.5; // seconds
-        const ACTIVE_RMS_THRESHOLD: f32 = 0.005;
-
-        // Recent segments for cross-channel dedup
-        let mut recent_segments: Vec<(String, f64, String)> = Vec::new();
-
-        let emit_segment = |text: &str, offset: f64, speaker: &str,
-                            recent: &mut Vec<(String, f64, String)>| {
-            // Dedup: if the other channel produced a similar text within 3 seconds, skip
-            let dominated = recent.iter().any(|(prev_text, prev_offset, prev_speaker)| {
-                prev_speaker != speaker
-                    && (offset - prev_offset).abs() < 3.0
-                    && text_similarity(text, prev_text) > 0.5
-            });
-            if dominated {
-                eprintln!("[sherpa] Dedup: skipping '{}' from {} (duplicate of other channel)", text, speaker);
-                return;
-            }
-            recent.push((text.to_string(), offset, speaker.to_string()));
-            if recent.len() > 20 { recent.drain(..recent.len() - 20); }
-
-            {
-                let mut store = transcript_for_whisper.lock().unwrap();
-                store.add(text.to_string(), offset, speaker);
-            }
-            let segment = TranscriptSegment {
-                timestamp: chrono::Utc::now(),
-                text: text.to_string(),
-                offset_secs: offset,
-                speaker: speaker.to_string(),
-            };
-            let _ = win.emit("new-transcript", &segment);
-        };
-
-        /// Compute RMS energy of audio samples
-        fn rms_energy(samples: &[f32]) -> f32 {
-            if samples.is_empty() { return 0.0; }
-            let sum: f32 = samples.iter().map(|s| s * s).sum();
-            (sum / samples.len() as f32).sqrt()
+                    "message": format!("ASR session start failed: {}", e)
+                }),
+            );
+            return;
         }
 
         loop {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-            let is_recording;
-            let is_paused;
-            {
-                let rec = state_for_whisper.lock().await;
-                is_recording = rec.is_recording;
-                is_paused = rec.is_paused;
+            let (is_recording, is_paused) = {
+                let rec = state_for_asr_loop.lock().await;
+                (rec.is_recording, rec.is_paused)
+            };
+            if !is_recording {
+                break;
+            }
+            if is_paused {
+                continue;
             }
 
-            if !is_recording {
-                let offset = start_time.elapsed().as_secs_f64();
-                for text in mic_engine.flush() {
-                    emit_segment(&text, offset, "me", &mut recent_segments);
+            let mic_data = {
+                let mut buf = mic_buf_for_asr.lock().unwrap();
+                if buf.len() > 0 { buf.drain_all() } else { vec![] }
+            };
+            let cap_data = {
+                let mut buf = cap_buf_for_asr.lock().unwrap();
+                if buf.len() > 0 { buf.drain_all() } else { vec![] }
+            };
+
+            if !mic_data.is_empty() || !cap_data.is_empty() {
+                let mixed = mix_audio(&mic_data, &cap_data);
+                if let Err(e) = asr.send_audio(&mixed, "mixed").await {
+                    eprintln!("[asr] send_audio error: {}", e);
                 }
-                for text in capture_engine.flush() {
-                    emit_segment(&text, offset, "other", &mut recent_segments);
+            }
+        }
+        let _ = asr.stop().await;
+    });
+
+    // === 4. Meter loop: 5-minute sync ===
+    let state_for_meter: SharedRecordingState = Arc::clone(&state);
+    let win_for_meter = window.clone();
+    tokio::spawn(async move {
+        let key = match license::storage::get_license_key() {
+            Ok(Some(k)) => k,
+            _ => {
+                eprintln!("[meter] No license key (free trial mode)");
+                return;
+            }
+        };
+        let meeting_id = uuid::Uuid::new_v4().to_string();
+        let provider = "confide".to_string();
+        let mut meter = license::metering::Meter::new(meeting_id, provider);
+
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+
+            let recording = {
+                let rec = state_for_meter.lock().await;
+                rec.is_recording
+            };
+            if !recording {
+                if let Some(evt) = meter.create_final_event() {
+                    let _ = license::metering::sync_usage(&key, vec![evt]).await;
                 }
                 break;
             }
 
-            if is_paused { continue; }
-
-            let now = start_time.elapsed().as_secs_f64();
-
-            // Drain mic audio
-            let mic_data = {
-                let mut buf = mic_buffer.lock().unwrap();
-                if buf.len() > 0 { buf.drain_all() } else { vec![] }
-            };
-
-            // Drain capture audio
-            let cap_data = {
-                let mut buf = capture_buffer.lock().unwrap();
-                if buf.len() > 0 { buf.drain_all() } else { vec![] }
-            };
-
-            // Track channel activity
-            if !cap_data.is_empty() && rms_energy(&cap_data) > ACTIVE_RMS_THRESHOLD {
-                capture_last_active = now;
-            }
-            if !mic_data.is_empty() && rms_energy(&mic_data) > ACTIVE_RMS_THRESHOLD {
-                mic_last_active = now;
-            }
-
-            // Process capture audio ("other") — always process
-            if !cap_data.is_empty() {
-                for text in capture_engine.process_audio(&cap_data) {
-                    emit_segment(&text, now, "other", &mut recent_segments);
+            if let Some(evt) = meter.maybe_create_event() {
+                let secs_used = evt.seconds_used;
+                match license::metering::sync_usage(&key, vec![evt]).await {
+                    Ok(()) => eprintln!("[meter] synced {} sec", secs_used),
+                    Err(e) => eprintln!("[meter] sync failed (will retry): {}", e),
                 }
-            }
-
-            // Process mic audio ("me") — suppress if capture channel was recently active
-            // (likely echo from speaker being picked up by mic)
-            if !mic_data.is_empty() {
-                let capture_was_active = (now - capture_last_active) < ECHO_SUPPRESS_WINDOW;
-                let mic_is_active = (now - mic_last_active) < 0.5;
-
-                // Feed audio to engine regardless (keeps VAD state consistent)
-                let texts = mic_engine.process_audio(&mic_data);
-
-                if capture_was_active && mic_is_active {
-                    // Both active: likely echo. Only emit if mic energy is significantly
-                    // higher than capture (user actually talking over the speaker)
-                    for text in texts {
-                        eprintln!("[sherpa] Echo suppress: dropping mic '{}' (capture was active)", text);
+                match license::verify::fetch_plan(&key).await {
+                    Ok(plan) => {
+                        let remaining = plan.quota_remaining_seconds();
+                        let _ = win_for_meter.emit("plan-updated", &plan);
+                        if remaining < 60 && remaining > 0 {
+                            let _ = win_for_meter.emit("quota-low", remaining);
+                        }
+                        if remaining <= 0 && !plan.auto_topup_enabled {
+                            let _ = win_for_meter.emit("quota-exhausted", ());
+                            let mut rec = state_for_meter.lock().await;
+                            rec.is_recording = false;
+                            break;
+                        }
                     }
-                } else {
-                    for text in texts {
-                        emit_segment(&text, now, "me", &mut recent_segments);
-                    }
+                    Err(e) => eprintln!("[meter] plan refresh failed: {}", e),
                 }
             }
         }
     });
 
-    // Spawn advisor loop
+    // === 5. Advisor loop ===
+    let state_for_advisor: SharedRecordingState = Arc::clone(&state);
     let transcript_for_advisor = transcript.clone();
     let win_for_advisor = window.clone();
+    spawn_advisor_loop(
+        state_for_advisor,
+        transcript_for_advisor,
+        win_for_advisor,
+        start_time,
+        active_locale,
+    );
+
+    Ok(())
+}
+
+fn mix_audio(a: &[f32], b: &[f32]) -> Vec<f32> {
+    let n = a.len().max(b.len());
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let av = a.get(i).copied().unwrap_or(0.0);
+        let bv = b.get(i).copied().unwrap_or(0.0);
+        if a.len() > i && b.len() > i {
+            out.push((av + bv) * 0.5);
+        } else {
+            out.push(av + bv);
+        }
+    }
+    out
+}
+
+fn spawn_advisor_loop(
+    state: SharedRecordingState,
+    transcript: SharedTranscriptStore,
+    window: tauri::Window,
+    start_time: std::time::Instant,
+    active_locale: String,
+) {
     tokio::spawn(async move {
         let config = config::load_config().unwrap_or_default();
-        eprintln!("[advisor] LLM config: base_url={}, model={}", config.llm.base_url, config.llm.model);
-        let advisor = crate::advisor::engine::AdvisorEngine::new(
-            &config.llm.base_url,
-            &config.llm.api_key,
-            &config.llm.model,
+        eprintln!(
+            "[advisor] LLM config: base_url={}, model={}, byo={}",
+            config.llm.base_url, config.llm.model, config.byo.active
         );
 
-        let templates_list = templates::list_templates().unwrap_or_default();
-        eprintln!("[advisor] Loaded {} templates", templates_list.len());
+        // Choose LLM provider based on byo mode
+        let advisor = if config.byo.active && !config.byo.anthropic_api_key.is_empty() {
+            crate::advisor::engine::AdvisorEngine::from_mode(
+                &crate::llm::LlmMode::UserAnthropic {
+                    api_key: config.byo.anthropic_api_key.clone(),
+                    model: config.byo.anthropic_model.clone(),
+                },
+            )
+        } else if config.byo.active && !config.byo.openai_api_key.is_empty() {
+            crate::advisor::engine::AdvisorEngine::from_mode(
+                &crate::llm::LlmMode::UserOpenAi {
+                    api_key: config.byo.openai_api_key.clone(),
+                    model: "gpt-4o".into(),
+                    base_url: "https://api.openai.com/v1".into(),
+                },
+            )
+        } else {
+            crate::advisor::engine::AdvisorEngine::new(
+                &config.llm.base_url,
+                &config.llm.api_key,
+                &config.llm.model,
+            )
+        };
+
+        let templates_list =
+            templates::list_templates_for_locale(&active_locale).unwrap_or_default();
+        eprintln!("[advisor] Loaded {} templates for locale {}", templates_list.len(), active_locale);
 
         let mut summary_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
         let mut advice_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
 
-        // Cooldown: track last advice time and last trigger reason to avoid repetition
-        let mut last_advice_time = std::time::Instant::now() - std::time::Duration::from_secs(60);
+        let mut last_advice_time =
+            std::time::Instant::now() - std::time::Duration::from_secs(60);
         let mut last_trigger_reason = String::new();
         let mut last_advice_transcript_len: usize = 0;
         const ADVICE_COOLDOWN_SECS: u64 = 30;
         const MIN_NEW_CHARS: usize = 50;
 
         loop {
-            // Check if stopped or paused
             {
-                let rec = state_for_advisor.lock().await;
+                let rec = state.lock().await;
                 if !rec.is_recording {
                     break;
                 }
@@ -388,38 +497,32 @@ pub async fn start_recording(
                 }
             }
 
-            // Read reference docs for context
-            let ref_docs = {
-                let rec = state_for_advisor.lock().await;
-                rec.reference_docs.clone()
+            let (ref_docs, ctx_note) = {
+                let rec = state.lock().await;
+                (rec.reference_docs.clone(), rec.context_note.clone())
             };
 
             tokio::select! {
                 _ = summary_interval.tick() => {
                     let text = {
-                        let store = transcript_for_advisor.lock().unwrap();
+                        let store = transcript.lock().unwrap();
                         store.full_text()
                     };
                     if !text.is_empty() {
-                        eprintln!("[advisor] Generating summary ({} chars)...", text.len());
                         match advisor.generate_summary(&text, &ref_docs).await {
                             Ok(summary) => {
-                                eprintln!("[advisor] Summary generated: {} points", summary.points.len());
-                                let _ = win_for_advisor.emit("meeting-summary", &summary);
+                                let _ = window.emit("meeting-summary", &summary);
                             }
                             Err(e) => eprintln!("[advisor] Summary error: {}", e),
                         }
                     }
                 }
                 _ = advice_interval.tick() => {
-                    // Cooldown check: skip if too soon since last advice
                     if last_advice_time.elapsed().as_secs() < ADVICE_COOLDOWN_SECS {
                         continue;
                     }
-
-                    // Pick template: use active_template_id if set, otherwise first
                     let tmpl = {
-                        let rec = state_for_advisor.lock().await;
+                        let rec = state.lock().await;
                         match &rec.active_template_id {
                             Some(id) => templates_list.iter().find(|t| t.id == *id).cloned(),
                             None => templates_list.first().cloned(),
@@ -427,38 +530,44 @@ pub async fn start_recording(
                     };
                     if let Some(ref tmpl) = tmpl {
                         let recent = {
-                            let store = transcript_for_advisor.lock().unwrap();
+                            let store = transcript.lock().unwrap();
                             store.recent_text(30.0)
                         };
-                        if recent.is_empty() { continue; }
-
-                        // Skip if not enough new content since last advice
+                        if recent.is_empty() {
+                            continue;
+                        }
                         if recent.len().saturating_sub(last_advice_transcript_len) < MIN_NEW_CHARS
-                            && last_advice_transcript_len > 0 {
+                            && last_advice_transcript_len > 0
+                        {
                             continue;
                         }
 
                         if let Some(trigger) = crate::advisor::rules::evaluate_triggers(
-                            &recent, &tmpl.trigger_config, 10.0
+                            &recent, &tmpl.trigger_config, 10.0,
                         ) {
-                            // Skip if same trigger reason fired consecutively
                             if trigger.reason == last_trigger_reason
-                                && last_advice_time.elapsed().as_secs() < ADVICE_COOLDOWN_SECS * 2 {
-                                eprintln!("[advisor] Skipping duplicate trigger: {}", trigger.reason);
+                                && last_advice_time.elapsed().as_secs()
+                                    < ADVICE_COOLDOWN_SECS * 2
+                            {
                                 continue;
                             }
-
-                            eprintln!("[advisor] Trigger fired: {}", trigger.reason);
                             let offset = start_time.elapsed().as_secs_f64();
-                            match advisor.generate_advice(
-                                tmpl, &recent, &trigger.reason, &ref_docs, offset
-                            ).await {
+                            match advisor
+                                .generate_advice(
+                                    tmpl,
+                                    &recent,
+                                    &trigger.reason,
+                                    &ref_docs,
+                                    &ctx_note,
+                                    offset,
+                                )
+                                .await
+                            {
                                 Ok(advice) => {
-                                    eprintln!("[advisor] Advice: {}", advice.suggestion);
                                     last_advice_time = std::time::Instant::now();
                                     last_trigger_reason = trigger.reason.clone();
                                     last_advice_transcript_len = recent.len();
-                                    let _ = win_for_advisor.emit("speaking-advice", &advice);
+                                    let _ = window.emit("speaking-advice", &advice);
                                 }
                                 Err(e) => eprintln!("[advisor] Advice error: {}", e),
                             }
@@ -468,20 +577,14 @@ pub async fn start_recording(
             }
         }
     });
-
-    Ok(())
 }
 
 #[command]
-pub async fn stop_recording(
-    state: tauri::State<'_, SharedRecordingState>,
-) -> Result<(), String> {
+pub async fn stop_recording(state: tauri::State<'_, SharedRecordingState>) -> Result<(), String> {
     let mut rec = state.lock().await;
     rec.is_recording = false;
     rec.is_paused = false;
     rec.start_time = None;
-    // The stream-holding thread will detect is_recording=false and exit,
-    // dropping the cpal::Stream objects and stopping capture
     Ok(())
 }
 
@@ -499,6 +602,11 @@ pub async fn get_transcript(
 #[command]
 pub fn get_templates() -> Result<Vec<MeetingTemplate>, String> {
     templates::list_templates().map_err(|e| e.to_string())
+}
+
+#[command]
+pub fn get_templates_for_locale(locale: String) -> Result<Vec<MeetingTemplate>, String> {
+    templates::list_templates_for_locale(&locale).map_err(|e| e.to_string())
 }
 
 #[command]
@@ -535,6 +643,11 @@ pub fn list_meetings() -> Result<Vec<MeetingRecord>, String> {
     history::list_meetings().map_err(|e| e.to_string())
 }
 
+#[command]
+pub fn delete_meeting(id: String) -> Result<(), String> {
+    history::delete_meeting(&id).map_err(|e| e.to_string())
+}
+
 // --- Meeting Minutes ---
 
 #[command]
@@ -542,20 +655,16 @@ pub async fn generate_meeting_minutes(
     transcript: String,
     summary: String,
 ) -> Result<crate::advisor::engine::MeetingMinutes, String> {
-    let config = config::load_config().map_err(|e| e.to_string())?;
+    let cfg = config::load_config().map_err(|e| e.to_string())?;
     let advisor = crate::advisor::engine::AdvisorEngine::new(
-        &config.llm.base_url,
-        &config.llm.api_key,
-        &config.llm.model,
+        &cfg.llm.base_url,
+        &cfg.llm.api_key,
+        &cfg.llm.model,
     );
-    advisor.generate_minutes(&transcript, &summary)
+    advisor
+        .generate_minutes(&transcript, &summary)
         .await
         .map_err(|e| e.to_string())
-}
-
-#[command]
-pub fn delete_meeting(id: String) -> Result<(), String> {
-    history::delete_meeting(&id).map_err(|e| e.to_string())
 }
 
 // --- Documents ---
@@ -573,7 +682,11 @@ pub async fn load_reference_doc(
     let doc = loader::load_document(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
     let mut rec = state.lock().await;
     rec.reference_docs = doc.content.clone();
-    eprintln!("[docs] Loaded reference doc: {} ({} chars)", doc.filename, doc.content.len());
+    eprintln!(
+        "[docs] Loaded reference doc: {} ({} chars)",
+        doc.filename,
+        doc.content.len()
+    );
     Ok(doc.filename)
 }
 
@@ -586,7 +699,7 @@ pub async fn clear_reference_doc(
     Ok(())
 }
 
-// --- Active Template ---
+// --- Active Template + Context Note + Locale ---
 
 #[command]
 pub async fn set_active_template(
@@ -598,7 +711,38 @@ pub async fn set_active_template(
     Ok(())
 }
 
-// --- Recording Status ---
+#[command]
+pub async fn set_meeting_context_note(
+    note: String,
+    state: tauri::State<'_, SharedRecordingState>,
+) -> Result<(), String> {
+    if note.chars().count() > 500 {
+        return Err("Context note must be ≤500 characters".into());
+    }
+    let mut rec = state.lock().await;
+    rec.context_note = note;
+    Ok(())
+}
+
+#[command]
+pub async fn get_meeting_context_note(
+    state: tauri::State<'_, SharedRecordingState>,
+) -> Result<String, String> {
+    let rec = state.lock().await;
+    Ok(rec.context_note.clone())
+}
+
+#[command]
+pub async fn set_active_locale(
+    locale: String,
+    state: tauri::State<'_, SharedRecordingState>,
+) -> Result<(), String> {
+    let mut rec = state.lock().await;
+    rec.active_locale = locale;
+    Ok(())
+}
+
+// --- Recording Status / Pause / Resume ---
 
 #[derive(Serialize)]
 pub struct RecordingStatusInfo {
@@ -620,8 +764,6 @@ pub async fn get_recording_status(
     })
 }
 
-// --- Pause/Resume ---
-
 #[command]
 pub async fn pause_recording(
     state: tauri::State<'_, SharedRecordingState>,
@@ -631,7 +773,6 @@ pub async fn pause_recording(
         return Err("Not recording".into());
     }
     rec.is_paused = true;
-    eprintln!("[recording] Paused");
     Ok(())
 }
 
@@ -644,6 +785,63 @@ pub async fn resume_recording(
         return Err("Not recording".into());
     }
     rec.is_paused = false;
-    eprintln!("[recording] Resumed");
     Ok(())
+}
+
+// --- Stealth ---
+
+#[command]
+pub fn set_stealth_mode(on: bool, app: tauri::AppHandle) -> Result<(), String> {
+    crate::stealth::set_stealth(on);
+    if let Some(w) = app.get_webview_window("main") {
+        crate::stealth::apply_to_window(&w).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[command]
+pub fn is_stealth_on() -> Result<bool, String> {
+    Ok(crate::stealth::is_stealth_on())
+}
+
+// --- License ---
+
+#[command]
+pub async fn get_user_plan() -> Result<UserPlan, String> {
+    let key = license::storage::get_license_key().map_err(|e| e.to_string())?;
+    if let Some(k) = key {
+        match license::verify::fetch_plan(&k).await {
+            Ok(p) => {
+                let cached = license::storage::CachedPlan {
+                    plan: p.clone(),
+                    cached_at: chrono::Utc::now().timestamp(),
+                    pending_usage: vec![],
+                };
+                let _ = license::storage::save_cached(&cached);
+                Ok(p)
+            }
+            Err(e) => {
+                if let Ok(Some(c)) = license::storage::load_cached() {
+                    let age_days = (chrono::Utc::now().timestamp() - c.cached_at) / 86400;
+                    if age_days <= 7 {
+                        return Ok(c.plan);
+                    }
+                }
+                Err(format!("Cannot verify license: {}", e))
+            }
+        }
+    } else {
+        Ok(UserPlan::free_default())
+    }
+}
+
+#[command]
+pub async fn set_license_key(key: String) -> Result<UserPlan, String> {
+    license::storage::set_license_key(&key).map_err(|e| e.to_string())?;
+    license::verify::fetch_plan(&key).await.map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn clear_license_key() -> Result<(), String> {
+    license::storage::clear_license_key().map_err(|e| e.to_string())
 }

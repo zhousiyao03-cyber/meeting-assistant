@@ -1,7 +1,13 @@
-pub mod audio;
 pub mod advisor;
+pub mod asr;
+pub mod audio;
 pub mod commands;
 pub mod documents;
+pub mod license;
+pub mod llm;
+pub mod shortcuts;
+pub mod stealth;
 pub mod storage;
 pub mod transcript;
+pub mod tray;
 pub mod whisper;

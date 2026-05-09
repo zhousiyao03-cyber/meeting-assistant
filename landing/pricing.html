@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confide — Pricing</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>body { font-family: -apple-system, "SF Pro Display", system-ui, sans-serif; }</style>
+</head>
+<body class="bg-neutral-50 text-neutral-900 antialiased">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <div class="text-xs text-neutral-500 mb-4">PRICING_VOL.01</div>
+    <h1 class="text-5xl font-bold mb-4" data-i18n="title"></h1>
+    <p class="text-lg text-neutral-600 mb-16" data-i18n="subtitle"></p>
+
+    <div class="grid md:grid-cols-3 gap-6">
+      <!-- Free -->
+      <div class="bg-white p-8 rounded-lg border">
+        <div class="text-sm font-medium mb-3" data-i18n="free.name"></div>
+        <div class="text-5xl font-bold mb-2">$0</div>
+        <div class="text-sm text-neutral-500 mb-1" data-i18n="free.qty"></div>
+        <div class="text-xs text-neutral-400 mb-6" data-i18n="free.note"></div>
+        <ul class="text-sm space-y-2 mb-8">
+          <li data-i18n="free.f1"></li>
+          <li data-i18n="free.f2"></li>
+          <li data-i18n="free.f3"></li>
+          <li data-i18n="free.f4"></li>
+        </ul>
+        <a href="/download/VoiceNote.dmg" class="block w-full text-center py-3 border border-neutral-300 rounded text-sm font-medium" data-i18n="free.cta"></a>
+      </div>
+
+      <!-- Pro -->
+      <div class="bg-white p-8 rounded-lg border-2 border-black relative">
+        <div class="absolute -top-3 left-8 bg-black text-white text-xs px-3 py-1 rounded" data-i18n="pro.badge"></div>
+        <div class="text-sm font-medium mb-3" data-i18n="pro.name"></div>
+        <div class="text-5xl font-bold mb-2">$19<span class="text-xl text-neutral-500">/mo</span></div>
+        <div class="text-sm text-neutral-500 mb-1" data-i18n="pro.qty"></div>
+        <div class="text-xs text-neutral-400 mb-6" data-i18n="pro.note"></div>
+        <ul class="text-sm space-y-2 mb-8">
+          <li data-i18n="pro.f1"></li>
+          <li data-i18n="pro.f2"></li>
+          <li data-i18n="pro.f3"></li>
+          <li data-i18n="pro.f4"></li>
+          <li data-i18n="pro.f5"></li>
+        </ul>
+        <a id="pro-checkout" href="#" class="block w-full text-center py-3 bg-black text-white rounded text-sm font-medium" data-i18n="pro.cta"></a>
+      </div>
+
+      <!-- Ultra -->
+      <div class="bg-white p-8 rounded-lg border">
+        <div class="text-sm font-medium mb-3">ULTRA</div>
+        <div class="text-5xl font-bold mb-2">$49<span class="text-xl text-neutral-500">/mo</span></div>
+        <div class="text-sm text-neutral-500 mb-1" data-i18n="ultra.qty"></div>
+        <div class="text-xs text-neutral-400 mb-6" data-i18n="ultra.note"></div>
+        <ul class="text-sm space-y-2 mb-8">
+          <li data-i18n="ultra.f1"></li>
+          <li data-i18n="ultra.f2"></li>
+          <li data-i18n="ultra.f3"></li>
+          <li data-i18n="ultra.f4"></li>
+          <li data-i18n="ultra.f5"></li>
+        </ul>
+        <a id="ultra-checkout" href="#" class="block w-full text-center py-3 border border-neutral-300 rounded text-sm font-medium" data-i18n="ultra.cta"></a>
+      </div>
+    </div>
+
+    <p class="text-xs text-neutral-500 mt-8" data-i18n="footnote"></p>
+
+    <div class="mt-8 text-xs text-neutral-400">
+      <a href="?lang=en-US" class="hover:underline">English</a>
+      ·
+      <a href="?lang=zh-CN" class="hover:underline">中文</a>
+    </div>
+  </div>
+
+  <script>
+    const STRINGS = {
+      "en-US": {
+        title: "Simple, transparent pricing",
+        subtitle: "Start free. Upgrade when you need more.",
+        free: {
+          name: "FREE", qty: "10 minutes / month", note: "No credit card required",
+          f1: "All 100+ languages", f2: "Job Interview + General Meeting templates",
+          f3: "Stealth mode", f4: "BYO API key (free forever)",
+          cta: "Download Free",
+        },
+        pro: {
+          badge: "Most Popular", name: "PRO", qty: "60 minutes / month", note: "Overage $0.35/min",
+          f1: "Everything in Free", f2: "Resume RAG (unlimited)", f3: "Permanent meeting history",
+          f4: "5 resume reviews / month", f5: "Auto top-up",
+          cta: "Subscribe — $19/mo",
+        },
+        ultra: {
+          qty: "200 minutes / month", note: "Overage $0.25/min",
+          f1: "Everything in Pro", f2: "15 resume reviews / month", f3: "Industry question bank",
+          f4: "Priority support 24h", f5: "Early access to new features",
+          cta: "Subscribe — $49/mo",
+        },
+        footnote: "Powered by Claude 4.6 + GPT-Realtime-Whisper. macOS 13+ required.",
+      },
+      "zh-CN": {
+        title: "简单透明的定价",
+        subtitle: "免费开始。需要更多时升级。",
+        free: {
+          name: "免费", qty: "10 分钟 / 月", note: "无需信用卡",
+          f1: "全部 100+ 种语言", f2: "面试 + 日常会议模板",
+          f3: "Stealth 模式", f4: "自带 API key（永久免费）",
+          cta: "免费下载",
+        },
+        pro: {
+          badge: "最受欢迎", name: "PRO", qty: "60 分钟 / 月", note: "超额 $0.35/min",
+          f1: "免费版全部功能", f2: "简历 RAG（无限次）", f3: "永久通话历史",
+          f4: "5 份简历优化 / 月", f5: "自动充值",
+          cta: "订阅 — $19/月",
+        },
+        ultra: {
+          qty: "200 分钟 / 月", note: "超额 $0.25/min",
+          f1: "Pro 全部功能", f2: "15 份简历优化 / 月", f3: "行业题库",
+          f4: "优先支持 24 小时", f5: "新功能抢先体验",
+          cta: "订阅 — $49/月",
+        },
+        footnote: "搭载 Claude 4.6 + GPT-Realtime-Whisper。需要 macOS 13+。",
+      },
+    };
+
+    const PRO_LEMON_URL = "REPLACE_WITH_LEMON_PRO_CHECKOUT_URL";
+    const ULTRA_LEMON_URL = "REPLACE_WITH_LEMON_ULTRA_CHECKOUT_URL";
+
+    function applyLang(lang) {
+      const dict = STRINGS[lang] || STRINGS["en-US"];
+      document.documentElement.lang = lang;
+      const get = (path) => path.split('.').reduce((o, k) => (o ? o[k] : ""), dict) || "";
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        el.textContent = get(el.getAttribute("data-i18n"));
+      });
+      const langSuffix = lang === "zh-CN" ? "?checkout[locale]=zh" : "?checkout[locale]=en";
+      document.getElementById("pro-checkout").href = PRO_LEMON_URL + langSuffix;
+      document.getElementById("ultra-checkout").href = ULTRA_LEMON_URL + langSuffix;
+    }
+
+    const params = new URLSearchParams(location.search);
+    const lang = params.get("lang") === "zh-CN" || (navigator.language.startsWith("zh") && !params.get("lang"))
+      ? "zh-CN" : "en-US";
+    applyLang(lang);
+  </script>
+</body>
+</html>

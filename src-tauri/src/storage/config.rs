@@ -17,12 +17,41 @@ pub struct AudioConfig {
     pub noise_reduction: bool,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ByoConfig {
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default)]
+    pub openai_api_key: String,
+    #[serde(default)]
+    pub anthropic_api_key: String,
+    #[serde(default = "default_anthropic_model")]
+    pub anthropic_model: String,
+}
+
+fn default_anthropic_model() -> String {
+    "claude-sonnet-4-6".into()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AppConfig {
     pub llm: LlmConfig,
     pub audio: AudioConfig,
     pub language_preference: String,
     pub analysis_mode: String,
+    #[serde(default)]
+    pub byo: ByoConfig,
+    #[serde(default = "default_openai_asr_key")]
+    pub openai_asr_api_key: String,
+    #[serde(default = "default_openai_asr_model")]
+    pub openai_asr_model: String,
+}
+
+fn default_openai_asr_key() -> String {
+    String::new()
+}
+fn default_openai_asr_model() -> String {
+    "gpt-realtime-whisper".into()
 }
 
 impl Default for AppConfig {
@@ -31,7 +60,7 @@ impl Default for AppConfig {
             llm: LlmConfig {
                 base_url: "https://llmgate.io/v1".into(),
                 api_key: String::new(),
-                model: "gpt-5.4".into(),
+                model: "claude-sonnet-4-6".into(),
             },
             audio: AudioConfig {
                 mic_device: String::new(),
@@ -40,6 +69,14 @@ impl Default for AppConfig {
             },
             language_preference: "auto".into(),
             analysis_mode: "balanced".into(),
+            byo: ByoConfig {
+                active: false,
+                openai_api_key: String::new(),
+                anthropic_api_key: String::new(),
+                anthropic_model: "claude-sonnet-4-6".into(),
+            },
+            openai_asr_api_key: String::new(),
+            openai_asr_model: "gpt-realtime-whisper".into(),
         }
     }
 }

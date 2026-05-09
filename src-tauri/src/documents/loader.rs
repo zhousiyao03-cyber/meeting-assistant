@@ -25,11 +25,9 @@ pub fn load_document(path: &Path) -> Result<LoadedDocument> {
     let content = match ext.as_str() {
         "md" | "txt" | "text" => fs::read_to_string(path)?,
         "pdf" => {
-            // Basic PDF text extraction - in production use a proper PDF library
-            // For now, fallback to reading raw bytes and extracting text-like content
             let bytes = fs::read(path)?;
             extract_pdf_text(&bytes).unwrap_or_else(|| {
-                "[PDF 文件 - 无法提取文本，请转换为 Markdown 或纯文本格式]".into()
+                "[PDF appears to be scanned or image-based. OCR support is coming in v1.0.5. For now, please convert to .md or .txt.]".into()
             })
         }
         _ => return Err(anyhow::anyhow!("Unsupported format: {}", ext)),
@@ -42,12 +40,24 @@ pub fn load_document(path: &Path) -> Result<LoadedDocument> {
     })
 }
 
-/// Very basic PDF text extraction (looks for text between BT/ET markers).
-/// For production, use `pdf-extract` or `lopdf` crate.
-fn extract_pdf_text(_bytes: &[u8]) -> Option<String> {
-    // Placeholder: return None to trigger the fallback message.
-    // A real implementation would use a PDF parsing library.
-    None
+/// Extract text from a PDF using pdf-extract crate.
+/// Returns None if extraction fails or returns < 50 chars (likely scanned).
+fn extract_pdf_text(bytes: &[u8]) -> Option<String> {
+    match pdf_extract::extract_text_from_mem(bytes) {
+        Ok(text) => {
+            let trimmed = text.trim().to_string();
+            if trimmed.len() < 50 {
+                eprintln!("[pdf] Extracted only {} chars, likely scanned (OCR推 v1.0.5)", trimmed.len());
+                None
+            } else {
+                Some(trimmed)
+            }
+        }
+        Err(e) => {
+            eprintln!("[pdf] extract_text_from_mem failed: {}", e);
+            None
+        }
+    }
 }
 
 /// Chunk a document into paragraphs for context window management.

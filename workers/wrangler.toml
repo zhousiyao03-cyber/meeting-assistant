@@ -1,0 +1,46 @@
+name = "confide-api"
+main = "src/index.ts"
+compatibility_date = "2026-05-09"
+compatibility_flags = ["nodejs_compat"]
+
+# === Production ===
+# Replace KV/D1 IDs with values from `pnpm kv:create` and `pnpm db:create`
+# (recorded in docs/general/plans/decision-log.md)
+
+[env.production]
+name = "confide-api"
+# Custom domain route — requires api.confide.knosi.xyz to be a Cloudflare-managed
+# zone. If not, comment this out and use workers.dev URL instead.
+# routes = [
+#   { pattern = "api.confide.knosi.xyz/*", custom_domain = true }
+# ]
+
+[env.production.vars]
+ENVIRONMENT = "production"
+
+[[env.production.kv_namespaces]]
+binding = "CONFIDE_LICENSES"
+id = "REPLACE_WITH_KV_ID"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "confide-events"
+database_id = "REPLACE_WITH_D1_ID"
+
+# === Dev (uses --remote flag with wrangler dev to hit real KV/D1) ===
+
+[env.dev]
+name = "confide-api-dev"
+
+[env.dev.vars]
+ENVIRONMENT = "dev"
+
+[[env.dev.kv_namespaces]]
+binding = "CONFIDE_LICENSES"
+id = "REPLACE_WITH_PREVIEW_KV_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_ID"
+
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "confide-events"
+database_id = "REPLACE_WITH_D1_ID"

@@ -32,7 +32,15 @@ export function ProfileSettings() {
 
   const updateTrigger = <K extends keyof TriggerConfig>(field: K, value: TriggerConfig[K]) => {
     if (!selected) return;
-    const updatedConfig = { ...selected.trigger_config, [field]: value };
+    const base: TriggerConfig = selected.trigger_config ?? {
+      on_ask_opinion: true,
+      on_domain_topic: true,
+      on_decision_point: true,
+      on_discussion_stuck: true,
+      custom_keywords: [],
+      domain_keywords: [],
+    };
+    const updatedConfig: TriggerConfig = { ...base, [field]: value };
     updateField("trigger_config", updatedConfig);
   };
 
@@ -192,7 +200,7 @@ export function ProfileSettings() {
                   <label key={key} className="flex items-start gap-3 p-2 rounded hover:bg-[var(--bg-card)]">
                     <input
                       type="checkbox"
-                      checked={selected.trigger_config[key]}
+                      checked={Boolean(selected.trigger_config?.[key])}
                       onChange={(e) => updateTrigger(key, e.target.checked)}
                       className="mt-0.5 accent-[var(--accent-purple)]"
                     />
@@ -209,7 +217,7 @@ export function ProfileSettings() {
                   领域关键词（逗号分隔，讨论中出现这些词时触发建议）
                 </label>
                 <textarea
-                  value={selected.trigger_config.domain_keywords.join("，")}
+                  value={(selected.trigger_config?.domain_keywords ?? []).join("，")}
                   onChange={(e) => handleKeywordsChange("domain_keywords", e.target.value)}
                   placeholder="前端，组件，React，性能优化"
                   rows={2}
@@ -222,7 +230,7 @@ export function ProfileSettings() {
                   自定义触发关键词（逗号分隔）
                 </label>
                 <textarea
-                  value={selected.trigger_config.custom_keywords.join("，")}
+                  value={(selected.trigger_config?.custom_keywords ?? []).join("，")}
                   onChange={(e) => handleKeywordsChange("custom_keywords", e.target.value)}
                   placeholder="进度怎么样，有什么阻塞，deadline"
                   rows={2}

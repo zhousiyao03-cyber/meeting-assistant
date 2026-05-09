@@ -1,12 +1,22 @@
 {
   "identifier": "default",
-  "description": "Default permissions for Meeting Assistant",
+  "description": "Default permissions for VoiceNote",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-size",
     "core:window:allow-set-title",
-    "dialog:allow-open"
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    "core:window:allow-is-visible",
+    "core:window:allow-set-position",
+    "dialog:allow-open",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-unregister-all"
   ]
 }

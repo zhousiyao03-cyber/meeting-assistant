@@ -18,6 +18,9 @@ pub fn evaluate_triggers(
     if trigger_config.on_ask_opinion {
         checks.push(check_asking_for_opinion(recent_text));
     }
+    if trigger_config.on_question_to_user {
+        checks.push(check_question_to_user(recent_text));
+    }
     if trigger_config.on_domain_topic && !trigger_config.domain_keywords.is_empty() {
         checks.push(check_domain_topic(recent_text, &trigger_config.domain_keywords));
     }
@@ -179,6 +182,46 @@ fn check_discussion_stuck(recent_text: &str, window_seconds: f64) -> TriggerResu
     TriggerResult { triggered: false, reason: String::new() }
 }
 
+/// Detect when the interviewer/manager directs a question at the user.
+/// Used by Job Interview template — distinguishes "Tell me about yourself"
+/// from "What do you all think" (the latter is on_ask_opinion).
+fn check_question_to_user(transcript: &str) -> TriggerResult {
+    let last = match extract_last_sentence(transcript) {
+        Some(s) => s,
+        None => return TriggerResult { triggered: false, reason: String::new() },
+    };
+
+    if !last.ends_with('?') && !last.ends_with('？') {
+        // Soft fallback: also check if a strong cue phrase appeared in last sentence even without ?
+        // We require either ? or a strong cue.
+        let cues = [
+            "tell me", "walk me through", "describe a time",
+            "讲讲", "说说", "介绍一下",
+        ];
+        let lower = last.to_lowercase();
+        if !cues.iter().any(|c| lower.contains(c)) {
+            return TriggerResult { triggered: false, reason: String::new() };
+        }
+    }
+
+    let user_indicators = [
+        "you", "your", "you're", "you've", "you'd", "you'll",
+        "你", "您", "您的", "你的",
+        "tell me", "walk me through", "describe a time",
+        "讲讲", "说说", "介绍一下",
+    ];
+    let lower = last.to_lowercase();
+    for ind in &user_indicators {
+        if lower.contains(&ind.to_lowercase()) {
+            return TriggerResult {
+                triggered: true,
+                reason: format!("有人向你提问: \"{}\"", truncate_str(&last, 40)),
+            };
+        }
+    }
+    TriggerResult { triggered: false, reason: String::new() }
+}
+
 /// Extract the last sentence from transcript text.
 fn extract_last_sentence(text: &str) -> Option<String> {
     let trimmed = text.trim();
@@ -281,6 +324,7 @@ mod tests {
     fn test_evaluate_triggers_domain_disabled() {
         let config = TriggerConfig {
             on_ask_opinion: false,
+            on_question_to_user: false,
             on_domain_topic: false,
             on_decision_point: false,
             on_discussion_stuck: false,
@@ -290,5 +334,23 @@ mod tests {
         // Nothing should trigger since all flags are off
         let result = evaluate_triggers("前端组件渲染大家觉得怎么样", &config, 10.0);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_question_to_user_english() {
+        let r = check_question_to_user("So tell me about your last project?");
+        assert!(r.triggered);
+    }
+
+    #[test]
+    fn test_question_to_user_chinese() {
+        let r = check_question_to_user("你能介绍一下你之前的项目吗？");
+        assert!(r.triggered);
+    }
+
+    #[test]
+    fn test_not_question_to_user() {
+        let r = check_question_to_user("It's a great day today.");
+        assert!(!r.triggered);
     }
 }

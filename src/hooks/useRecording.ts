@@ -36,7 +36,7 @@ export function useRecording() {
   }, []);
 
   const start = useCallback(
-    async (micDevice: string, captureDevice: string) => {
+    async (micDevice: string, _captureDevice?: string) => {
       setStatus("recording");
       setElapsed(0);
       startedAtRef.current = new Date().toISOString();
@@ -44,7 +44,7 @@ export function useRecording() {
         setElapsed((prev) => prev + 1);
       }, 1000);
       try {
-        await startRecording(micDevice, captureDevice);
+        await startRecording(micDevice);
       } catch (e: any) {
         console.error("Failed to start recording:", e);
         setStatus("idle");

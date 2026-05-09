@@ -7,7 +7,14 @@ export interface TranscriptSegment {
   timestamp: string;
   text: string;
   offset_secs: number;
-  speaker: "me" | "other";
+  speaker: "me" | "other" | "mixed";
+}
+
+export interface TranscriptDelta {
+  text: string;
+  speaker: string;
+  offset_secs: number;
+  is_final: boolean;
 }
 
 export interface MeetingSummary {
@@ -24,6 +31,7 @@ export interface SpeakingAdvice {
 
 export interface TriggerConfig {
   on_ask_opinion: boolean;
+  on_question_to_user?: boolean;
   on_domain_topic: boolean;
   on_decision_point: boolean;
   on_discussion_stuck: boolean;
@@ -39,10 +47,13 @@ export interface MeetingTemplate {
   trigger_hints: string[];
   advice_style: string;
   enabled: boolean;
-  role_persona: string;
-  mimic_style: string;
-  expertise_context: string;
-  trigger_config: TriggerConfig;
+  language?: string;
+  role_persona?: string;
+  mimic_style?: string;
+  expertise_context?: string;
+  stealth_default?: boolean;
+  advice_cooldown_seconds?: number;
+  trigger_config?: TriggerConfig;
 }
 
 export interface LlmConfig {
@@ -57,11 +68,21 @@ export interface AudioConfig {
   noise_reduction: boolean;
 }
 
+export interface ByoConfig {
+  active: boolean;
+  openai_api_key: string;
+  anthropic_api_key: string;
+  anthropic_model: string;
+}
+
 export interface AppConfig {
   llm: LlmConfig;
   audio: AudioConfig;
   language_preference: string;
   analysis_mode: string;
+  byo: ByoConfig;
+  openai_asr_api_key: string;
+  openai_asr_model: string;
 }
 
 export interface ModelStatus {
@@ -102,4 +123,27 @@ export interface MeetingMinutes {
 export interface BackendError {
   source: string;
   message: string;
+}
+
+// === New for Confide ===
+
+export type Tier = "free" | "pro" | "ultra";
+
+export interface UserPlan {
+  tier: Tier;
+  monthly_quota_seconds: number;
+  used_this_month_seconds: number;
+  overage_rate_per_min_cents: number;
+  resume_rag_enabled: boolean;
+  resume_credits_remaining: number;
+  byo_active: boolean;
+  auto_topup_enabled: boolean;
+  history_persistence_days: number;
+  renews_at: number | null;
+  cancelled_at: number | null;
+}
+
+export interface ScreenRecordingPermissionStatus {
+  status: "granted" | "denied" | "not-determined";
+  macos_version_ok: boolean;
 }

@@ -1,0 +1,101 @@
+{
+  "control": {
+    "start": "开始",
+    "pause": "暂停",
+    "resume": "继续",
+    "stop": "停止",
+    "elapsed": "已录 {{time}}"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "欢迎使用 Confide",
+      "tagline": "实时会议 Copilot。搭载 GPT-Realtime-Whisper + Claude 4.6。",
+      "chooseLang": "选择你的语言：",
+      "continue": "继续"
+    },
+    "screenRecording": {
+      "title": "屏幕录制权限",
+      "body": "Confide 需要屏幕录制权限来捕获会议音频（Zoom / Meet / Teams）。我们从不查看你的屏幕——只读取系统音频。",
+      "afterEnable": "授权后必须退出并重启 Confide 才能生效。",
+      "openSettings": "打开系统设置",
+      "recheck": "重新检查",
+      "granted": "已授权 ✓"
+    },
+    "macosTooOld": {
+      "title": "需要 macOS 13 或更高版本",
+      "body": "Confide 使用 Apple 的 ScreenCaptureKit 框架捕获会议音频，无需安装 BlackHole 等第三方驱动。该框架仅在 macOS 13.0 及以上版本可用。macOS 12 支持在我们的 roadmap 上。"
+    },
+    "microphone": {
+      "title": "麦克风",
+      "body": "选择你的麦克风（系统声音单独捕获）："
+    },
+    "done": {
+      "title": "全部就绪 🎉",
+      "body": "你有 10 分钟/月 免费时长。点击菜单栏图标开始第一场会议。",
+      "cta": "开始使用 Confide"
+    }
+  },
+  "newMeeting": {
+    "title": "新建会议",
+    "template": "模板",
+    "contextDoc": "上下文文档（可选）",
+    "pickDoc": "拖入或选择 PDF / MD / TXT",
+    "changeDoc": "更换…",
+    "contextNote": "备注（可选，≤500 字）",
+    "contextNotePlaceholder": "例：这是 Stripe onsite 第二轮，重点考察系统设计。",
+    "cancel": "取消",
+    "start": "开始录音",
+    "loading": "加载中…"
+  },
+  "billing": {
+    "freePlan": "免费",
+    "proPlan": "PRO",
+    "ultraPlan": "ULTRA",
+    "minRemaining": "{{used}}/{{total}} 分钟",
+    "quotaLow": "本月剩余不足 1 分钟",
+    "quotaExhausted": "本月含量已用完",
+    "quotaExhaustedBody": "你已用完本月全部会议时长。升级套餐继续使用：",
+    "upgrade": "升级套餐",
+    "buyMore": "购买更多",
+    "close": "关闭"
+  },
+  "license": {
+    "currentPlan": "当前套餐",
+    "placeholder": "confide-2026-XXXX-XXXX-XXXX-XX",
+    "activate": "激活 License",
+    "activating": "激活中…",
+    "noLicense": "还没有 license？去获取 →",
+    "signOut": "退出 / 移除 license"
+  },
+  "settings": {
+    "title": "设置",
+    "tabs": {
+      "audio": "音频",
+      "llm": "AI 模型",
+      "language": "语言",
+      "license": "License",
+      "byo": "自带 Key",
+      "profile": "个人资料"
+    },
+    "language": {
+      "appLanguage": "应用语言",
+      "appLanguageDesc": "控制界面显示语言",
+      "audioLanguage": "默认音频语言",
+      "audioLanguageDesc": "新建会议的默认识别语言"
+    },
+    "byo": {
+      "title": "自带 API Key",
+      "desc": "使用你自己的 OpenAI / Anthropic API key。BYO 模式下录音不消耗本月含量。",
+      "openaiLabel": "OpenAI API Key",
+      "anthropicLabel": "Anthropic API Key",
+      "activeLabel": "BYO 模式已启用",
+      "saveBtn": "保存",
+      "saved": "已保存"
+    }
+  },
+  "stealth": {
+    "indicatorOn": "🛡️ 隐身已开",
+    "indicatorOff": "隐身已关",
+    "tooltip": "⌘⇧H 切换窗口 · ⌘⇧K 紧急停止"
+  }
+}

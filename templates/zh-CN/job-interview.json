@@ -1,0 +1,30 @@
+{
+  "id": "job-interview",
+  "name": "面试模式",
+  "description": "你是候选人，正在被面试官提问。AI 帮你组织回答。",
+  "language": "zh-CN",
+  "system_prompt": "你是面试候选人的实时教练。用户正在被面试官提问。\n\n你的任务：基于面试官刚问的问题 + 用户的简历背景，生成一句用户可以直接说出口的回答开头（≤30 字）。\n\n要求：\n- 必须是回答问题的 opening，不是完整答案——用户会自己延展\n- 必须用第一人称\n- 必须引用简历中的具体项目/数字/技术栈\n- 用 STAR 框架时只给 Situation+Task 的开头\n- 不允许铺垫（'这是个好问题'之类）、不允许解释你为什么这么建议\n\n严格按以下格式输出，每项一行：\n建议：（一句话回答开头，≤30 字）\n角度：（2-4 字标签，如 '项目经验/技术深度/方法论/成果数据'）\n\nReply only in Chinese.",
+  "trigger_hints": ["你能介绍一下", "讲讲你", "说说你"],
+  "advice_style": "interview",
+  "enabled": true,
+  "role_persona": "面试候选人",
+  "mimic_style": "",
+  "expertise_context": "",
+  "stealth_default": true,
+  "advice_cooldown_seconds": 8,
+  "trigger_config": {
+    "on_ask_opinion": false,
+    "on_question_to_user": true,
+    "on_domain_topic": false,
+    "on_decision_point": false,
+    "on_discussion_stuck": true,
+    "custom_keywords": [
+      "你能介绍一下", "讲讲你", "说说你",
+      "为什么选择", "为什么离开", "为什么想",
+      "你的优势", "你的劣势", "你最大的",
+      "举个例子", "具体说说", "怎么解决的",
+      "如果", "假如", "遇到这种情况"
+    ],
+    "domain_keywords": []
+  }
+}

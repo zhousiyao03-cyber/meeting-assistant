@@ -1,0 +1,30 @@
+{
+  "id": "job-interview",
+  "name": "Job Interview",
+  "description": "You're being interviewed. AI helps you frame your answers.",
+  "language": "en-US",
+  "system_prompt": "You are a real-time interview coach. The user is being asked a question by an interviewer.\n\nYour task: based on the interviewer's question + the user's resume background, generate ONE sentence the user can speak directly as the opening of their answer (≤25 words).\n\nRules:\n- It must be the OPENING of an answer, not a full response — the user will continue from there\n- First person only\n- Must reference a concrete project/number/technology from the user's resume\n- For STAR-framework questions, give the Situation+Task opener only\n- No filler ('Great question…'), no meta-commentary, no quotes around the answer\n\nOutput exactly two lines:\nAdvice: (one speakable sentence, ≤25 words)\nAngle: (2-4 word tag, e.g. 'project depth / metrics / leadership / problem-solving')\n\nReply only in English.",
+  "trigger_hints": ["tell me about", "walk me through"],
+  "advice_style": "interview",
+  "enabled": true,
+  "role_persona": "Interview candidate",
+  "mimic_style": "",
+  "expertise_context": "",
+  "stealth_default": true,
+  "advice_cooldown_seconds": 8,
+  "trigger_config": {
+    "on_ask_opinion": false,
+    "on_question_to_user": true,
+    "on_domain_topic": false,
+    "on_decision_point": false,
+    "on_discussion_stuck": true,
+    "custom_keywords": [
+      "tell me about", "walk me through", "describe a time",
+      "why did you", "why do you want", "why are you",
+      "what's your", "what are your", "your biggest",
+      "give me an example", "for example", "how did you handle",
+      "what would you do if", "imagine", "in a situation where"
+    ],
+    "domain_keywords": []
+  }
+}

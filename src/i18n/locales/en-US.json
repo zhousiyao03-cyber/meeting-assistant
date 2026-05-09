@@ -1,0 +1,101 @@
+{
+  "control": {
+    "start": "Start",
+    "pause": "Pause",
+    "resume": "Resume",
+    "stop": "Stop",
+    "elapsed": "Recorded {{time}}"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Welcome to Confide",
+      "tagline": "Real-time meeting copilot. Powered by GPT-Realtime-Whisper + Claude 4.6.",
+      "chooseLang": "Choose your language:",
+      "continue": "Continue"
+    },
+    "screenRecording": {
+      "title": "Screen Recording permission",
+      "body": "Confide needs Screen Recording access to capture meeting audio (Zoom, Meet, Teams). We never see your screen — only system audio.",
+      "afterEnable": "After enabling, quit and restart Confide for the permission to take effect.",
+      "openSettings": "Open System Settings",
+      "recheck": "Re-check",
+      "granted": "Granted ✓"
+    },
+    "macosTooOld": {
+      "title": "macOS 13 or later required",
+      "body": "Confide uses Apple's ScreenCaptureKit framework to capture meeting audio without requiring third-party drivers like BlackHole. This framework is only available on macOS 13.0 (Ventura) and later. macOS 12 support is on our roadmap."
+    },
+    "microphone": {
+      "title": "Microphone",
+      "body": "Select your microphone (system sound is captured separately):"
+    },
+    "done": {
+      "title": "You're all set 🎉",
+      "body": "You have 10 free minutes per month to start. Click the menu bar icon to start your first meeting.",
+      "cta": "Start using Confide"
+    }
+  },
+  "newMeeting": {
+    "title": "New Meeting",
+    "template": "Template",
+    "contextDoc": "Context document (optional)",
+    "pickDoc": "Drop or pick PDF / MD / TXT",
+    "changeDoc": "Change…",
+    "contextNote": "Context note (optional, ≤500 chars)",
+    "contextNotePlaceholder": "e.g. This is the Stripe onsite second round, focus on system design.",
+    "cancel": "Cancel",
+    "start": "Start Recording",
+    "loading": "Loading…"
+  },
+  "billing": {
+    "freePlan": "FREE",
+    "proPlan": "PRO",
+    "ultraPlan": "ULTRA",
+    "minRemaining": "{{used}}/{{total}} min",
+    "quotaLow": "Less than 1 minute remaining this month",
+    "quotaExhausted": "Monthly quota reached",
+    "quotaExhaustedBody": "You've used your full monthly meeting time. Upgrade to continue:",
+    "upgrade": "Upgrade Plan",
+    "buyMore": "Buy more",
+    "close": "Close"
+  },
+  "license": {
+    "currentPlan": "Current plan",
+    "placeholder": "confide-2026-XXXX-XXXX-XXXX-XX",
+    "activate": "Activate License",
+    "activating": "Activating…",
+    "noLicense": "Don't have a license? Get one →",
+    "signOut": "Sign out / Remove license"
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "audio": "Audio",
+      "llm": "AI Models",
+      "language": "Language",
+      "license": "License",
+      "byo": "BYO Key",
+      "profile": "Profile"
+    },
+    "language": {
+      "appLanguage": "App Language",
+      "appLanguageDesc": "Controls UI display language",
+      "audioLanguage": "Default Audio Language",
+      "audioLanguageDesc": "Default ASR language for new meetings"
+    },
+    "byo": {
+      "title": "Bring Your Own Key",
+      "desc": "Use your own OpenAI / Anthropic API key. When BYO is active, recordings don't count against your monthly quota.",
+      "openaiLabel": "OpenAI API Key",
+      "anthropicLabel": "Anthropic API Key",
+      "activeLabel": "BYO mode active",
+      "saveBtn": "Save",
+      "saved": "Saved"
+    }
+  },
+  "stealth": {
+    "indicatorOn": "🛡️ Stealth ON",
+    "indicatorOff": "Stealth OFF",
+    "tooltip": "⌘⇧H toggle window · ⌘⇧K panic stop"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "confide-workers",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --env production",
+    "tail": "wrangler tail --env production",
+    "typecheck": "tsc --noEmit",
+    "db:create": "wrangler d1 create confide-events",
+    "db:schema": "wrangler d1 execute confide-events --file=schema.sql --remote",
+    "kv:create": "wrangler kv namespace create CONFIDE_LICENSES"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240620.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.0.0"
+  }
+}

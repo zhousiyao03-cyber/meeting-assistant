@@ -3,8 +3,12 @@ name = "meeting-assistant"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "meeting_assistant"
+path = "src/lib.rs"
+
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -14,7 +18,7 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 dirs = "5"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "v7"] }
 anyhow = "1"
 log = "0.4"
 env_logger = "0.11"
@@ -22,6 +26,42 @@ tauri-plugin-dialog = "2"
 futures-util = "0.3"
 bzip2 = "0.5"
 tar = "0.4"
+
+# Week 1: macOS 13+ system audio capture
+[target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = "0.3.6"
+objc2 = "0.5"
+objc2-app-kit = { version = "0.2", features = ["NSWindow"] }
+
+[dependencies.tokio-tungstenite]
+version = "0.24"
+features = ["rustls-tls-native-roots"]
+
+[dependencies.async-trait]
+version = "0.1"
+
+# Week 2: stealth global shortcuts + tray
+[dependencies.tauri-plugin-global-shortcut]
+version = "2"
+
+# Week 3: real PDF text extraction
+[dependencies.pdf-extract]
+version = "0.7"
+
+# Week 4: license persistence + URL encoding
+[dependencies.keyring]
+version = "3"
+
+[dependencies.urlencoding]
+version = "2"
+
+# Week 5: static once_cell for i18n string table
+[dependencies.once_cell]
+version = "1"
+
+# Week 5: base64 (rather than hand-rolling)
+[dependencies.base64]
+version = "0.22"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
