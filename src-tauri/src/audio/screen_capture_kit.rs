@@ -12,6 +12,9 @@ use std::sync::{Arc, Mutex};
 use super::buffer::SharedBuffer;
 use super::system_capture::{AppFilter, SystemAudioCapture};
 
+const SCK_SAMPLE_RATE: u32 = 48_000;
+const SCK_CHANNELS: u8 = 1;
+
 pub struct ScreenCaptureKitBackend {
     buffer: SharedBuffer,
     #[allow(dead_code)]
@@ -55,7 +58,11 @@ impl ScreenCaptureKitBackend {
             .set_captures_audio(true)
             .map_err(|e| anyhow!("set_captures_audio: {:?}", e))?
             .set_excludes_current_process_audio(true)
-            .map_err(|e| anyhow!("set_excludes_current_process_audio: {:?}", e))?;
+            .map_err(|e| anyhow!("set_excludes_current_process_audio: {:?}", e))?
+            .set_sample_rate(SCK_SAMPLE_RATE)
+            .map_err(|e| anyhow!("set_sample_rate: {:?}", e))?
+            .set_channel_count(SCK_CHANNELS)
+            .map_err(|e| anyhow!("set_channel_count: {:?}", e))?;
 
         let output = SckOutput {
             buffer: self.buffer.clone(),
@@ -133,32 +140,40 @@ impl screencapturekit::stream::output_trait::SCStreamOutputTrait for SckOutput {
 
 /// Extract f32 PCM + sample rate + channel count from a CMSampleBuffer.
 ///
-/// The screencapturekit 0.3.x exact PCM extraction API is not fully stable —
-/// since live audio buffer extraction crosses Objective-C boundary in non-trivial
-/// ways and the crate may not expose it directly, we use a defensive approach:
-/// if direct extraction is unavailable, return an error and let the caller
-/// (which logs to stderr) be informed. The buffer will simply not be populated
-/// for that callback, and capture continues. This is **safe but degraded** —
-/// it means in this version the system audio buffer accumulates only from
-/// callbacks where extraction succeeds.
-///
-/// In a follow-up commit (post-PoC-validation), implement against the exact
-/// crate API discovered via `cargo doc --open --package screencapturekit`.
+/// ScreenCaptureKit delivers audio as packed Float32 in an AudioBufferList.
+/// We requested mono 48kHz via `set_channel_count(1)` + `set_sample_rate(48000)`,
+/// so we return (samples, 48000.0, 1).
 fn extract_pcm(
-    _sample_buffer: &screencapturekit::output::CMSampleBuffer,
+    sample_buffer: &screencapturekit::output::CMSampleBuffer,
 ) -> Result<(Vec<f32>, f64, usize)> {
-    // Defensive stub: returns error so the system continues running and logs.
-    // The PoC at /tmp/sckit-poc verified that sample buffers ARE delivered;
-    // implementing PCM extraction requires reading the crate's CMSampleBuffer
-    // helpers. Until that's confirmed via `cargo doc`, we return error here
-    // so the framework wires up correctly but buffer remains empty.
-    //
-    // FOLLOW-UP (tracked in decision-log.md v1.0.5 待办池):
-    //   - Implement PCM extraction matching screencapturekit 0.3.6 API
-    //   - Reference: tests in /tmp/sckit-poc with cargo expand to introspect
-    Err(anyhow!(
-        "PCM extraction stub — see FOLLOW-UP comment in screen_capture_kit.rs"
-    ))
+    let abl = sample_buffer
+        .get_audio_buffer_list()
+        .map_err(|e| anyhow!("get_audio_buffer_list: {:?}", e))?;
+
+    let buffers = abl.buffers();
+    if buffers.is_empty() {
+        return Err(anyhow!("AudioBufferList has no buffers"));
+    }
+
+    let mut pcm: Vec<f32> = Vec::new();
+    let channels = buffers[0].number_channels.max(1) as usize;
+    for buf in buffers {
+        let bytes = buf.data();
+        if bytes.len() % 4 != 0 {
+            return Err(anyhow!(
+                "AudioBuffer byte length {} not aligned to 4 (Float32)",
+                bytes.len()
+            ));
+        }
+        let samples = bytes.len() / 4;
+        pcm.reserve(samples);
+        for chunk in bytes.chunks_exact(4) {
+            let f = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            pcm.push(f);
+        }
+    }
+
+    Ok((pcm, SCK_SAMPLE_RATE as f64, channels))
 }
 
 /// Downsample interleaved 48kHz stereo to 16kHz mono.
